@@ -1,0 +1,13 @@
+ScottiCAD
+Copyright 2026 scotticad.dev
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes or is derived from third-party software, whose notices are
+reproduced in THIRD_PARTY_NOTICES.md:
+
+  - golang.org/x/image and golang.org/x/text (BSD-3-Clause, The Go Authors)
+  - go.starlark.net, Starlark in Go (BSD-3-Clause, The Bazel Authors)
+  - the Go fonts, embedded via golang.org/x/image (Bigelow & Holmes Inc.)
+  - the CSG algorithm in pkg/geom/csg.go is based on csg.js
+    (MIT, Copyright (c) 2011 Evan Wallace)

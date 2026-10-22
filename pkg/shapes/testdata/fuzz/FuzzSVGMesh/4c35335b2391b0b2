@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<path d=\"M2 0 0 0 1e10 1e300\"/>")

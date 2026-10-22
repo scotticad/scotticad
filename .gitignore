@@ -1,0 +1,42 @@
+# --- build outputs (build.ps1 / go build) ---
+*.exe
+*.exe~
+*.dll
+*.test
+*.out
+*.prof
+coverage.*
+
+# --- Python (client, tests, local venv) ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# --- designs and exports produced while using or testing ScottiCAD ---
+/designs/
+/*.scotticad
+/*.stl
+/*.obj
+/*.mtl
+/*.png
+
+# --- NAS metadata folders ---
+@eaDir/
+*@SynoEAStream
+*@SynoResource
+#recycle/
+#snapshot/
+
+# --- editors and OS clutter ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
