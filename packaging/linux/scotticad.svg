@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="256" height="256">
+  <!-- ScottiCAD's logo (drawLogo in pkg/app/icons.go), in the default theme's colours -->
+  <polygon points="12,1 21.5,6.5 12,12 2.5,6.5" fill="#f0ab6f"/>
+  <polygon points="2.5,6.5 12,12 12,23 2.5,17.5" fill="#af7428"/>
+  <polygon points="12,12 21.5,6.5 21.5,17.5 12,23" fill="#6e4c15"/>
+  <ellipse cx="12" cy="6.5" rx="4.6" ry="2.65" fill="#4e3711"/>
+  <ellipse cx="12" cy="7.4" rx="4.232" ry="1.908" fill="#36260b"/>
+  <g stroke="#ffffff" stroke-opacity="0.55" stroke-width="0.6" stroke-linecap="round">
+    <line x1="12" y1="12" x2="2.5" y2="6.5"/>
+    <line x1="12" y1="12" x2="21.5" y2="6.5"/>
+    <line x1="12" y1="12" x2="12" y2="23"/>
+  </g>
+</svg>

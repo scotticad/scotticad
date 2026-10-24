@@ -1,0 +1,31 @@
+# Normalise line endings so editors and Windows/Linux checkouts don't show
+# whole files as changed. Text files are stored with LF in the repository.
+* text=auto eol=lf
+
+# PowerShell scripts keep CRLF in the working tree (Windows PowerShell 5.1
+# is happiest with it); they are still stored as LF.
+*.ps1 text eol=crlf
+
+# shell scripts must keep LF to run on Linux and macOS
+*.sh   text eol=lf
+
+# Go, Python, docs, data
+*.go   text eol=lf diff=golang
+*.mod  text eol=lf
+*.sum  text eol=lf
+*.py   text eol=lf diff=python
+*.md   text eol=lf diff=markdown
+*.json text eol=lf
+*.scotticad text eol=lf
+*.svg  text eol=lf
+
+# Binaries: never touch line endings, never try to diff or merge
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.gz   binary
+*.mp4  binary
+*.exe  binary
+*.stl  binary
+*.ttf  binary
+*.otf  binary

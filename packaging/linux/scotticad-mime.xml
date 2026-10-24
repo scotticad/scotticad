@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- the .scotticad file type, so designs open in ScottiCAD from a file manager -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-scotticad">
+    <comment>ScottiCAD design</comment>
+    <sub-class-of type="application/json"/>
+    <glob pattern="*.scotticad"/>
+    <icon name="scotticad"/>
+  </mime-type>
+</mime-info>

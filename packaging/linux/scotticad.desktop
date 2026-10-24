@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ScottiCAD
+GenericName=3D Modeler
+Comment=3D modelling for makers, on your own computer
+Exec=scotticad %f
+Icon=scotticad
+Terminal=false
+Categories=Graphics;3DGraphics;Engineering;
+Keywords=CAD;3D;modelling;modeling;3D printing;STL;3MF;
+MimeType=application/x-scotticad;
+StartupWMClass=scotticad

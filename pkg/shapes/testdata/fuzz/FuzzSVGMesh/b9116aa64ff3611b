@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<svg A0=\"0\"><path d=\"M020 0 0000001000 70 000 770\"A><path d=\"M1020 10 .0 1 0 21\"A></svg>")

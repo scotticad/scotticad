@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<svg ><path d=\"M20+0 05+5&0+0 19E91+2 0 2\"></svgd")
