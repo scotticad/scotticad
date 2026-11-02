@@ -28,7 +28,9 @@
 MAKE = ["pi4", "pi5", "zero"]   # mounts to make, side by side: keys of BOARDS
 STANDOFF_H = 6.0         # gap under the board
 PLATE = 3.0              # plate thickness
-FIXING = "insert"        # "insert" (heat-set inserts) or "tap" (self-tapping screws)
+FIXING = "tap"           # "tap": the screw cuts its own thread in a pilot hole
+                         # (an M2.5 machine or self-tapping screw for a Pi);
+                         # "insert": a hole for a brass heat-set insert
 MOUNT = "screws"         # "screws", "vesa75", "vesa100" or "none"
 MARGIN = 5.0             # plate beyond the standoffs
 SHOW_BOARD = True        # the board outline
@@ -162,21 +164,24 @@ def make_mount(key):
     bw, bh = b["size"]
     board_z = PLATE + STANDOFF_H               # the board's underside
 
-    # the plate covers the standoffs (and the VESA pattern, if any), the board
-    # centred on it
+    # the board centred on the plate, which reaches past the standoffs (and
+    # the VESA pattern, if any). Centred on the board, not on its holes: a
+    # Pi 4 or 5 has its holes bunched at one end, away from the USB and
+    # Ethernet ports, so the plate reaches as far past the port end
     xs = [x for x, _ in b["holes"]]
     ys = [y for _, y in b["holes"]]
-    hx0, hx1, hy0, hy1 = min(xs), max(xs), min(ys), max(ys)
-    cx, cy = (hx0 + hx1) / 2, (hy0 + hy1) / 2  # the hole pattern's middle
-    half_w = (hx1 - hx0) / 2 + standoff_d / 2 + MARGIN
-    half_h = (hy1 - hy0) / 2 + standoff_d / 2 + MARGIN
+    cx, cy = bw / 2, bh / 2                    # the board's middle
+    half_w = max([abs(x - cx) for x in xs]) + standoff_d / 2 + MARGIN
+    half_h = max([abs(y - cy) for y in ys]) + standoff_d / 2 + MARGIN
     vesa = {"vesa75": 75.0, "vesa100": 100.0}.get(MOUNT, 0)
     if vesa:
         half_w = max(half_w, vesa / 2 + VESA_HOLE / 2 + MARGIN)
         half_h = max(half_h, vesa / 2 + VESA_HOLE / 2 + MARGIN)
     elif MOUNT == "screws":
-        # room at the ends for the fixing screws, beyond the standoffs
-        half_w += FIX_HEAD + 2
+        # room at the ends for the fixing screws, beyond the standoffs and
+        # past the board's ends, so a screwdriver reaches them with the
+        # board in place
+        half_w = max(half_w + FIX_HEAD + 2, bw / 2 + 1 + FIX_HEAD + MARGIN)
     plate = place("box", [cx - half_w, cy - half_h, 0], [cx + half_w, cy + half_h, PLATE])
     cad.set_param(plate, "radius", 1.5)
     parts = [plate]
