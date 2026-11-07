@@ -32,6 +32,7 @@ var (
 	pLoadCursorW        = user32.NewProc("LoadCursorW")
 	pSetCursor          = user32.NewProc("SetCursor")
 	pGetClientRect      = user32.NewProc("GetClientRect")
+	pScreenToClient     = user32.NewProc("ScreenToClient")
 	pSetCapture         = user32.NewProc("SetCapture")
 	pReleaseCapture     = user32.NewProc("ReleaseCapture")
 	pSetWindowTextW     = user32.NewProc("SetWindowTextW")
@@ -464,7 +465,7 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		x, y := xy(lParam)
 		// wheel coordinates are screen coordinates; convert to client
 		pt := struct{ x, y int32 }{int32(x), int32(y)}
-		user32.NewProc("ScreenToClient").Call(hwnd, uintptr(unsafe.Pointer(&pt)))
+		pScreenToClient.Call(hwnd, uintptr(unsafe.Pointer(&pt)))
 		w.h.MouseWheel(d, float64(pt.x), float64(pt.y), mods())
 		return 0
 	case wmKeyDown, wmSysKeyDown:

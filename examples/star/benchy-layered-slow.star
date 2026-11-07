@@ -2,7 +2,7 @@
 # ScottiCAD primitives, as close to the official model as boxes, cylinders
 # and cones allow.
 #
-# THIS WAS A PROTOTYPE, KEPT AS AN EXAMPLE OF WHAT NOT TO DO. It builds the
+# A COUNTEREXAMPLE, KEPT TO SHOW WHAT NOT TO DO. It builds the
 # hull a slow, inefficient way: 55 stacked layers, each assembled from
 # boxes, slabs and cylinders, about 1,060 shapes and groups in all. It
 # takes about a minute to run, and the layers leave visible stair-steps on
@@ -37,8 +37,6 @@
 # rounded edges. Against the official STL (voxels of 0.25 mm) the result
 # overlaps 93.5% by volume, with a mean surface deviation of about 0.12 mm;
 # most of the rest is the 0.5 mm stair-stepping of the hull layers.
-#
-# It takes about a minute to build (about 1,060 shapes and groups).
 
 COLOR = "#e8562a"
 SIDES = 64      # facets on cylinders

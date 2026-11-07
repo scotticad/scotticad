@@ -47,7 +47,7 @@ VERSION := $(strip $(shell cat VERSION))
 EPOCH := $(shell git log -1 --format=%ct 2>/dev/null || echo 1767225600)
 PKG := scotticad-v$(VERSION)
 
-DOCS := README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md
+DOCS := README.md RELEASE-NOTES.md LICENSE NOTICE THIRD_PARTY_NOTICES.md
 LINUX_FILES := packaging/linux/install.sh packaging/linux/scotticad.desktop \
 	packaging/linux/scotticad.svg packaging/linux/scotticad-mime.xml
 
@@ -61,7 +61,7 @@ scotticad:
 
 test: scotticad
 	$(GO) test ./pkg/...
-	test -x $(VENV)/bin/python || { python3 -m venv $(VENV) && $(VENV)/bin/python -m pip install --quiet --disable-pip-version-check pytest; }
+	test -x $(VENV)/bin/python || { $(PYTHON) -m venv $(VENV) && $(VENV)/bin/python -m pip install --quiet --disable-pip-version-check pytest; }
 	@if command -v xvfb-run >/dev/null; then \
 		xvfb-run -a -s "-screen 0 1920x1080x24" $(VENV)/bin/python -m pytest python/tests -q; \
 	elif [ -n "$$DISPLAY" ]; then \

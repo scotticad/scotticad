@@ -68,7 +68,7 @@ func TestCodeEditIndent(t *testing.T) {
 	e.set("x\ny\n")
 	e.anchor, e.cur = 0, 2
 	keyOf(e, vkTab, 0, &clip)
-	if e.text != "x\ny\n" && e.text != "    x\ny\n" {
+	if e.text != "    x\ny\n" {
 		t.Fatalf("indent of one line by its break: %q", e.text)
 	}
 	e.set("ab cd")

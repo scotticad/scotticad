@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"runtime"
 	"slices"
 	"strings"
@@ -32,7 +33,7 @@ import (
 // modeNames and popupNames are get_ui_state's names for the tool modes and
 // popups, in their constants' order.
 var (
-	modeNames  = []string{"none", "visibility", "measure", "ruler", "align", "mirror", "notes", "construction_plane", "split", "layflat"}
+	modeNames  = []string{"none", "visibility", "measure", "ruler", "align", "mirror", "notes", "construction_plane", "split", "layflat", "orbit_center"}
 	popupNames = []string{"", "visibility", "snap", "color", "font", "library", "design_menu", "settings", "import", "export", "help", "about", "start"}
 )
 
@@ -58,8 +59,7 @@ func (p args) f(k string, def float64) float64 {
 	case float64:
 		return v
 	case string:
-		var f float64
-		if _, err := fmt.Sscan(v, &f); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
+		if f, ok := parseNum(v); ok {
 			return f
 		}
 	case bool:
@@ -69,6 +69,13 @@ func (p args) f(k string, def float64) float64 {
 		return 0
 	}
 	return def
+}
+
+// parseNum reads a number sent as a string; NaN and infinities are refused.
+func parseNum(s string) (float64, bool) {
+	var f float64
+	_, err := fmt.Sscan(s, &f)
+	return f, err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 func (p args) s(k, def string) string {
@@ -288,8 +295,7 @@ func nodeJSON(n *doc.Node, deep bool, top bool) map[string]any {
 	}
 	if top {
 		m["bounds"] = boundsJSON(n.WorldBounds())
-		v := n.WorldMesh(false).Volume()
-		m["volume"] = v
+		m["volume"] = n.WorldMesh(false).Volume()
 	}
 	if deep && n.IsGroup() {
 		var cs []any
@@ -306,6 +312,14 @@ func (a *App) nodesArg(p args) []int {
 		return p.ids("ids")
 	}
 	return nil
+}
+
+// targetNodes is the call's ids as nodes, or the selection when none are given.
+func (a *App) targetNodes(p args) []*doc.Node {
+	if ids := a.nodesArg(p); ids != nil {
+		return a.ed.Doc.FindAll(ids)
+	}
+	return a.ed.Selected()
 }
 
 // withSel runs f on the call's ids by temporarily selecting them (on the
@@ -327,7 +341,7 @@ func init() {
 	ok := func() (any, error) { return map[string]any{"ok": true}, nil }
 	apiMethods = []apiMethod{
 		// --- design files
-		{Name: "describe", Doc: "List every API method with its parameters.", fn: func(a *App, p args) (any, error) { return apiMethods, nil }},
+		{Name: "describe", Doc: "List every API method with its parameters.", fn: func(a *App, p args) (any, error) { return a.describeMethods(), nil }},
 		{Name: "new_design", Doc: "Start a new empty design (discards unsaved changes).", fn: func(a *App, p args) (any, error) {
 			a.ed.NewDesign()
 			a.homeCamera(false)
@@ -364,6 +378,9 @@ func init() {
 			}
 			if a.ed.Workplane != nil {
 				st["construction_plane"] = a.ed.Workplane[:]
+			}
+			if a.root != "" {
+				st["root"] = a.root
 			}
 			return st, nil
 		}},
@@ -527,12 +544,7 @@ func init() {
 		{Name: "set_position", Doc: "Move so the bounding box's anchor point lands at (x, y, z); omitted axes are unchanged.",
 			Params: []apiParam{opt("x", "float", ""), opt("y", "float", ""), opt("z", "float", ""), opt("anchor", "string", `"min" (default) or "center"`), idsParam},
 			fn: func(a *App, p args) (any, error) {
-				var ns []*doc.Node
-				if ids := a.nodesArg(p); ids != nil {
-					ns = a.ed.Doc.FindAll(ids)
-				} else {
-					ns = a.ed.Selected()
-				}
+				ns := a.targetNodes(p)
 				if len(ns) == 0 {
 					return nil, errors.New("nothing selected")
 				}
@@ -556,13 +568,7 @@ func init() {
 		{Name: "set_size", Doc: "Resize the bounding box (mm); omitted axes keep their size. X/Y stay centred, Z keeps the base.",
 			Params: []apiParam{opt("x", "float", ""), opt("y", "float", ""), opt("z", "float", ""), opt("uniform", "bool", "scale all axes by the one given"), idsParam},
 			fn: func(a *App, p args) (any, error) {
-				ids := a.nodesArg(p)
-				var ns []*doc.Node
-				if ids != nil {
-					ns = a.ed.Doc.FindAll(ids)
-				} else {
-					ns = a.ed.Selected()
-				}
+				ns := a.targetNodes(p)
 				if len(ns) == 0 {
 					return nil, errors.New("nothing selected")
 				}
@@ -737,11 +743,7 @@ func init() {
 				}
 				at := p.f("at", math.NaN())
 				if math.IsNaN(at) {
-					ns := a.ed.Selected()
-					if ids := a.nodesArg(p); ids != nil {
-						ns = a.ed.Doc.FindAll(ids)
-					}
-					at = doc.BoundsIn(ns, a.ed.Work()).Center().Axis(ax)
+					at = doc.BoundsIn(a.targetNodes(p), a.ed.Work()).Center().Axis(ax)
 				}
 				ids, err := a.ed.Split(a.nodesArg(p), ax, at, p.s("keep", doc.KeepBoth), p.f("gap", 0))
 				return map[string]any{"ids": ids}, err
@@ -755,10 +757,11 @@ func init() {
 				}
 				return ok2(a.ed.LayFlat(a.nodesArg(p), n))
 			}},
-		{Name: "set_section", Doc: "Section view: hide everything on one side of a plane square to an axis of the current plane (the view only; the design is unchanged).",
-			Params: []apiParam{opt("on", "bool", "default true"), opt("axis", "axis", "x, y or z; default y"), opt("at", "float", "where along the axis, mm; default: the design's middle"),
+		{Name: "set_section", Doc: "Section view: hide everything on one side of a plane square to an axis of the current plane (the view only; the design is unchanged). Each call aims it afresh. Returns the view, with crosses false if the plane misses the shapes it cuts.",
+			Params: []apiParam{opt("on", "bool", "default true"), opt("axis", "axis", "x, y or z; default y"), opt("at", "float", "where along the axis, mm; default: the middle of what it cuts"),
 				opt("keep", "string", "which side shows: above or below (the + or - side); default: the side away from the camera"),
-				opt("pin", "bool", "stay open when the selection changes")},
+				opt("pin", "bool", "stay open when the selection changes; default true"),
+				opt("ids", "int[]", "the shapes to cut (a shape inside a group cuts the group); default every shape")},
 			fn: func(a *App, p args) (any, error) {
 				if !p.b("on", true) {
 					a.setSection(false)
@@ -782,8 +785,21 @@ func init() {
 				default:
 					return nil, errors.New("keep must be above or below")
 				}
+				ids := a.nodesArg(p)
+				if len(ids) == 0 {
+					ids = nil // every shape
+				}
+				for _, id := range ids {
+					if a.ed.Doc.FindAny(id) == nil {
+						return nil, fmt.Errorf("no node %d", id)
+					}
+				}
 				a.setSection(true)
 				s := &a.section
+				// not the selection, as the toolbar button aims it: a caller
+				// that selected shapes to edit them, then grouped them, would
+				// find the view cutting what it had last selected
+				s.ids, s.sel = ids, slices.Clone(a.ed.Sel)
 				if ax >= 0 {
 					s.axis = ax
 				}
@@ -791,10 +807,8 @@ func init() {
 				if p.has("at") {
 					s.at = p.f("at", s.at)
 				}
-				if p.has("pin") {
-					s.pinned = p.b("pin", false)
-				}
-				return ok()
+				s.pinned = p.b("pin", true)
+				return a.sectionJSON(), nil
 			}},
 		// --- filament
 		{Name: "filament_estimate", Doc: "Estimate the filament the selection (or ids, or the whole design) takes: grams, metres, cost, and per colour. Supports, brims and purge aren't included.",
@@ -872,9 +886,9 @@ func init() {
 		{Name: "attach_construction_plane", Doc: "Put a construction plane on top-level shape id (its own axes, on its bottom); id 0 removes it, back to the build plate.",
 			Params: []apiParam{req("id", "int", "")},
 			fn:     func(a *App, p args) (any, error) { return ok2(a.ed.AttachWorkplane(p.i("id", 0))) }},
-		{Name: "set_tool", Doc: "Activate a tool mode.", Params: []apiParam{req("tool", "string", "none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, layflat, cruise")},
+		{Name: "set_tool", Doc: "Activate a tool mode.", Params: []apiParam{req("tool", "string", "none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, layflat, orbit_center, cruise")},
 			fn: func(a *App, p args) (any, error) {
-				m := map[string]toolMode{"none": modeNone, "align": modeAlign, "mirror": modeMirror, "measure": modeMeasure, "visibility": modeVisibility, "ruler": modeRulerPlace, "notes": modeNotes, "construction_plane": modeWorkplane, "split": modeSplit, "layflat": modeLayFlat}
+				m := map[string]toolMode{"none": modeNone, "align": modeAlign, "mirror": modeMirror, "measure": modeMeasure, "visibility": modeVisibility, "ruler": modeRulerPlace, "notes": modeNotes, "construction_plane": modeWorkplane, "split": modeSplit, "layflat": modeLayFlat, "orbit_center": modeOrbitCenter}
 				t := p.s("tool", "")
 				if t == "cruise" {
 					a.cruise = !a.cruise
@@ -925,11 +939,18 @@ func init() {
 			}
 			return ok()
 		}},
-		{Name: "screenshot", Doc: "Render the window to a PNG.", Params: []apiParam{req("path", "string", "")}, fn: func(a *App, p args) (any, error) {
-			if err := a.screenshotPNG(p.s("path", "")); err != nil {
+		{Name: "screenshot", Doc: "Render the window to a PNG: written to path, or without one returned in the reply as base64 (png).", Params: []apiParam{opt("path", "string", "PNG file to write")}, fn: func(a *App, p args) (any, error) {
+			png, err := a.screenshotData()
+			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"width": a.w.W, "height": a.w.H, "dpi": a.w.DPI}, nil
+			r := map[string]any{"width": a.w.W, "height": a.w.H, "dpi": a.w.DPI}
+			if path := p.s("path", ""); path != "" {
+				// its error reported, close included
+				return r, os.WriteFile(path, png, 0o644)
+			}
+			r["png"] = png // []byte marshals as base64
+			return r, nil
 		}},
 		{Name: "project", Doc: "World point (mm) to window coordinates (logical px).", Params: []apiParam{req("x", "float", ""), req("y", "float", ""), req("z", "float", "")},
 			fn: func(a *App, p args) (any, error) {
@@ -937,7 +958,8 @@ func init() {
 				x, y, okk := a.project(geom.V(p.f("x", 0), p.f("y", 0), p.f("z", 0)))
 				return map[string]any{"x": x, "y": y, "visible": okk && a.vp.Contains(x, y)}, nil
 			}},
-		{Name: "get_ui_state", Doc: "Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.", fn: func(a *App, p args) (any, error) {
+		{Name: "get_ui_state", Doc: "Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; the center of rotation's marker (where it is drawn, and its setting); in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.", fn: func(a *App, p args) (any, error) {
+			a.layout() // asked before the first frame, the window would be 0 × 0
 			mode := modeNames[a.mode]
 			pop := popupNames[a.popup]
 			st := map[string]any{"mode": mode, "popup": pop, "hot": a.hot, "cruise": a.cruise, "notes_hidden": a.notesHidden, "exporting": a.exporting, "recent": a.recent, "banner": a.bannerText(), "toast": a.toast,
@@ -946,12 +968,12 @@ func init() {
 				"background":      rgbHex(float64(a.bgColor[0]), float64(a.bgColor[1]), float64(a.bgColor[2])), "theme": currentTheme.Name,
 				"background_jobs": doc.Pending(), "filament_panel": a.fil.shown, "scale": a.w.DPI, "min_window": []int{a.w.MinW, a.w.MinH},
 				"atlas": map[string]any{"size": a.batch.AtlasSize(), "generation": a.batch.Generation}}
-			if s := a.section; s.on {
-				keep := doc.KeepAbove
-				if s.keep < 0 {
-					keep = doc.KeepBelow
-				}
-				st["section"] = map[string]any{"axis": string(rune('x' + s.axis)), "at": s.at, "keep": keep, "ids": s.ids, "pinned": s.pinned}
+			st["orbit_marker_setting"] = a.orbitMarker
+			if x, y, okk := a.orbitMarkerAt(); okk {
+				st["orbit_marker"] = []float64{x, y}
+			}
+			if a.section.on {
+				st["section"] = a.sectionJSON()
 			}
 			if a.field != nil {
 				st["field"] = map[string]any{"id": a.field.id, "text": a.field.text}
@@ -1106,8 +1128,16 @@ func init() {
 		// --- scripting
 		{Name: "run_script", Doc: "Run a Starlark script (as the console's Editor tab does) and return its printed output and any error; one undo step.",
 			Params: []apiParam{req("code", "string", "the script"), opt("name", "string", "file name for errors"), opt("cwd", "string", "folder relative paths resolve against")},
-			// serveConn runs the script; this is only reached from inside one
+			// Dispatch runs the script; this is only reached from inside one
 			fn: func(a *App, p args) (any, error) { return nil, errors.New("a script can't start another script") }},
+		{Name: "stop_script", Doc: "Stop the running script, as the console's Stop button does; stopped is false if none was running.",
+			fn: func(a *App, p args) (any, error) {
+				running := a.con.running
+				if running {
+					a.stopScript()
+				}
+				return map[string]any{"stopped": running}, nil
+			}},
 		{Name: "get_console", Doc: "The Scripting console: open, tab, running, transcript lines, prompt and script text.",
 			fn: func(a *App, p args) (any, error) { return a.consoleJSON(), nil }},
 		{Name: "script_api", Doc: "The cad methods scripts get (mirroring the Python client).",
@@ -1276,6 +1306,10 @@ func (a *App) runCall(c apiCall) {
 				res = apiResult{err: err}
 				return
 			}
+			if err := a.checkRoot(c.method, c.params); err != nil {
+				res = apiResult{err: err}
+				return
+			}
 			// automation sees exact geometry, unless a call asks to see
 			// the window as it is ("live": true; e.g. a screenshot while
 			// shapes are still being combined)
@@ -1308,9 +1342,8 @@ func checkParams(m apiMethod, p args) error {
 		case float64:
 			return true
 		case string:
-			var f float64
-			_, err := fmt.Sscan(v, &f)
-			return err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
+			_, ok := parseNum(v)
+			return ok
 		case bool:
 			return true
 		}
@@ -1394,6 +1427,55 @@ func (a *App) ServeAPI(addr string) (string, error) {
 	return ln.Addr().String(), nil
 }
 
+// Dispatch runs one API call, as a line on the socket does: run_script on
+// the calling goroutine (its cad calls need the UI thread), any other
+// method on the UI thread between frames. It must not be called on the UI
+// thread. The MCP server (pkg/mcp) calls it directly.
+func (a *App) Dispatch(method string, p map[string]any) (any, error) {
+	if p == nil {
+		p = map[string]any{}
+	}
+	if method == "run_script" {
+		if err := a.checkRoot(method, p); err != nil {
+			return nil, err
+		}
+		return a.runScriptAPI(p)
+	}
+	reply := make(chan apiResult, 1)
+	a.calls <- apiCall{method: method, params: p, reply: reply}
+	a.w.Wake()
+	r := <-reply
+	return r.result, r.err
+}
+
+// Call is Dispatch with the reply as JSON: the MCP server's backend when
+// it runs in this process.
+func (a *App) Call(method string, p map[string]any) (json.RawMessage, error) {
+	r, err := a.Dispatch(method, p)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return json.RawMessage("{}"), nil
+	}
+	return json.Marshal(r)
+}
+
+// MethodTable is describe's reply, without a running ScottiCAD: what an
+// MCP server connecting to one lists while it isn't up yet.
+func MethodTable() ([]byte, error) { return json.Marshal(apiMethods) }
+
+// CloseForClient closes the window when the program driving it has gone
+// (an MCP client hanging up): through the usual Save changes? prompt, so
+// the user can keep it open; at once when headless, with nobody to ask.
+func (a *App) CloseForClient() {
+	a.post(func() {
+		if a.headless || a.Close() {
+			a.w.Quit()
+		}
+	})
+}
+
 type rpcRequest struct {
 	ID     any             `json:"id"`
 	Method string          `json:"method"`
@@ -1441,15 +1523,7 @@ func (a *App) serveConn(conn net.Conn) {
 			}
 		}
 		var r apiResult
-		if req.Method == "run_script" {
-			// runs here, off the UI thread: its cad calls need it
-			r.result, r.err = a.runScriptAPI(p)
-		} else {
-			reply := make(chan apiResult, 1)
-			a.calls <- apiCall{method: req.Method, params: p, reply: reply}
-			a.w.Wake()
-			r = <-reply
-		}
+		r.result, r.err = a.Dispatch(req.Method, p)
 		if r.err != nil {
 			resp.Error = &rpcError{-32000, r.err.Error()}
 		} else {

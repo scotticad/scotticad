@@ -11,7 +11,7 @@ import (
 // within Keep are never evicted, so a working set bigger than the limit
 // (every mesh a frame draws) is kept whole rather than churned through
 // again and again; the cache then shrinks once the set is no longer in
-// use. Its Load and Store are sync.Map's.
+// use. Load and Store have sync.Map's signatures.
 type Cache struct {
 	mu     sync.Mutex
 	limit  int

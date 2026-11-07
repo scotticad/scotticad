@@ -37,13 +37,7 @@ func readRecent(p string) []string {
 	return rp.Files
 }
 
-func writeRecent(p string, files []string) error {
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	b, _ := json.MarshalIndent(recentPrefs{Files: files}, "", " ")
-	return os.WriteFile(p, b, 0o644)
-}
+func writeRecent(p string, files []string) error { return writePrefs(p, recentPrefs{Files: files}) }
 
 // samePath is whether two paths name the same file, as far as their text
 // says: Windows file names don't distinguish case, Linux ones do.
@@ -95,6 +89,52 @@ func (a *App) setRecent(files []string) {
 	}
 	if p := prefsPath("recent.json"); p != "" {
 		writeRecent(p, files)
+	}
+}
+
+// --- view preferences -------------------------------------------------------------
+//
+// Per-user choices about the view, kept beside the theme. Like the recent
+// list, automated runs use the defaults and never save.
+
+type viewPrefs struct {
+	OrbitMarker *bool `json:"orbit_marker,omitempty"` // missing: on
+}
+
+func readViewPrefs(p string) viewPrefs {
+	var vp viewPrefs
+	if b, err := os.ReadFile(p); err == nil {
+		json.Unmarshal(b, &vp)
+	}
+	return vp
+}
+
+func writeViewPrefs(p string, vp viewPrefs) error { return writePrefs(p, vp) }
+
+func (a *App) loadViewPrefs() {
+	a.orbitMarker = true
+	if a.headless {
+		return
+	}
+	if p := prefsPath("view.json"); p != "" {
+		if vp := readViewPrefs(p); vp.OrbitMarker != nil {
+			a.orbitMarker = *vp.OrbitMarker
+		}
+	}
+}
+
+// setOrbitMarker turns the center of rotation's marker on or off and
+// remembers it.
+func (a *App) setOrbitMarker(on bool) {
+	a.orbitMarker = on
+	a.w.Redraw()
+	if a.headless {
+		return
+	}
+	if p := prefsPath("view.json"); p != "" {
+		if err := writeViewPrefs(p, viewPrefs{OrbitMarker: &on}); err != nil {
+			a.showToast("Couldn't save the view settings: " + err.Error())
+		}
 	}
 }
 

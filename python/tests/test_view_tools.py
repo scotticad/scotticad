@@ -1,7 +1,11 @@
 """Section view and Lay flat."""
+import base64
+import collections
 import math
 import os
+import struct
 import sys
+import zlib
 
 import pytest
 
@@ -26,6 +30,112 @@ def fresh(cad):
 def centre_on_screen(cad, id):
     b = cad.node(id)["bounds"]
     return cad.project(*b["center"])
+
+
+def read_png(data):
+    """Width, height and rows of (r, g, b) from an 8-bit RGB or RGBA PNG,
+    as Go's encoder writes them."""
+    pos, idat, w = 8, b"", 0
+    while pos < len(data):
+        n, kind = struct.unpack(">I4s", data[pos:pos + 8])
+        chunk = data[pos + 8:pos + 8 + n]
+        if kind == b"IHDR":
+            w, h, depth, ctype = struct.unpack(">IIBB", chunk[:10])
+            assert depth == 8 and ctype in (2, 6), (depth, ctype)
+            bpp = 3 if ctype == 2 else 4
+        elif kind == b"IDAT":
+            idat += chunk
+        pos += 12 + n
+    raw, stride, rows, prev = zlib.decompress(idat), w * bpp, [], bytearray(w * bpp)
+    for y in range(h):
+        f, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b, c = prev[i], prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + (a + b) // 2) & 255
+            elif f == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append([tuple(line[x * bpp:x * bpp + 3]) for x in range(w)])
+        prev = line
+    return w, h, rows
+
+
+def test_an_api_section_cuts_what_it_was_aimed_at_after_grouping(cad):
+    # an assistant edits shapes (each edit selects them), opens a section,
+    # then groups everything: the section must still cut, and calling
+    # set_section again must aim it afresh
+    a = cad.add_shape("box", x=-15)
+    b = cad.add_shape("box", x=15)
+    cad.select([b])
+    r = cad.set_section(axis="z", at=10, keep="below")
+    assert r["ids"] is None and r["pinned"] and r["crosses"], r  # every shape, not the selection
+    g = cad.group(ids=[a, b])
+    sec = cad.ui_state()["section"]
+    assert sec["crosses"] and sec["pinned"], "grouping (a selection change) keeps it open"
+    cad.clear_selection()
+    cad.set_camera(target=[0, 0, 10], yaw=-90, pitch=20, dist=120, ortho=False)
+    cad.click(*cad.project(-15, -10, 18))  # the cut-away top of the group
+    assert not cad.selection()["ids"], "the group is cut: its top half can't be clicked"
+    cad.click(*cad.project(-15, -10, 4))
+    assert cad.selection()["ids"] == [g]
+
+    # ids name a shape inside the group: the group is cut
+    cad.clear_selection()
+    r = cad.set_section(axis="z", at=10, keep="below", ids=[a])
+    assert r["ids"] == [a] and r["crosses"]
+    cad.click(*cad.project(-15, -10, 18))
+    assert not cad.selection()["ids"]
+    # a plane past the shapes says so
+    assert not cad.set_section(axis="z", at=50)["crosses"]
+    # an unknown id is refused, and the view is left as it was
+    with pytest.raises(Exception):
+        cad.set_section(ids=[987654])
+    assert cad.ui_state()["section"]["at"] == 50
+    # unpinned, it closes when the selection changes, as the toolbar's does
+    cad.set_section(axis="z", at=10, pin=False)
+    cad.select([g])
+    cad.controls()  # a frame
+    assert "section" not in cad.ui_state()
+
+
+def test_the_cut_face_hides_the_build_plate(cad):
+    # Looking down into a Z section, the cut face is drawn where the part's
+    # base shows through the cut, and the base lies on the build plate. The
+    # cut face must cover the plate's sheet and grid, not fight with them.
+    # A hole along X through the middle, at the cut's height: through the
+    # cut, its lower wall shows, and the cut face mustn't cover it.
+    box = cad.add_shape("box")
+    cad.set_bounds(min=[-20, -20, 0], max=[20, 20, 20], ids=[box])
+    hole = cad.add_shape("cylinder", hole=True)
+    cad.rotate("y", 90, ids=[hole])
+    cad.set_bounds(min=[-25, -4, 6], max=[25, 4, 14], ids=[hole])
+    part = cad.group(ids=[box, hole])
+    cad.set_color("#2f80ed", ids=[part])
+    cad.clear_selection()
+    cad.set_section(axis="z", at=10, keep="below")
+    for ortho, yaw, pitch in ((True, 0, 89.9), (False, 30, 70)):
+        cad.set_camera(target=[0, 0, 10], yaw=yaw, pitch=pitch, dist=150, ortho=ortho)
+        shot = cad.call("screenshot")
+        w, h, rows = read_png(base64.b64decode(shot["png"]))
+        dpi = shot["dpi"]
+
+        def colours(pts):
+            return collections.Counter(rows[int(py * dpi)][int(px * dpi)] for px, py in (cad.project(*p) for p in pts))
+        # points across the cut, clear of the walls and of the hole
+        cut = colours([(x, y, 10) for x in range(-14, 15) for y in range(-14, 15) if abs(y) >= 7])
+        # the cut face is one flat shade and its hatching: two colours
+        face = [c for c, _ in cut.most_common(2)]
+        assert sum(cut[c] for c in face) / sum(cut.values()) > 0.99, (ortho, cut.most_common(6))
+        # down the hole's middle: its wall, shaded, not the cut face
+        bore = colours([(x, 0, 10) for x in range(-14, 15)])
+        assert not set(bore) & set(face), (ortho, bore.most_common(4), face)
 
 
 def test_section_view_hides_and_cannot_be_clicked(cad):

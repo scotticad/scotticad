@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	starjson "go.starlark.net/lib/json"
 	starmath "go.starlark.net/lib/math"
@@ -204,7 +205,11 @@ func shown(v starlark.Value) string {
 	switch x := v.(type) {
 	case starlark.String:
 		if n := len(x); n > maxShown {
-			return fmt.Sprintf("%s… (%d characters)", starlark.String(string(x)[:maxShown]).String(), n)
+			cut := maxShown // on a character boundary, not inside one
+			for cut > 0 && !utf8.RuneStart(x[cut]) {
+				cut--
+			}
+			return fmt.Sprintf("%s… (%d characters)", starlark.String(string(x)[:cut]).String(), n)
 		}
 	case starlark.Bytes:
 		if n := len(x); n > maxShown {
@@ -380,7 +385,7 @@ func (s *Session) callMethod(m *Method, args starlark.Tuple, kw []starlark.Tuple
 		}
 		// as the Python client: an empty optional path, or an empty camera
 		// target, is no value (it tests "if path", "if target")
-		if s, ok := v.(string); ok && s == "" && prm.Path && !prm.Required {
+		if str, ok := v.(string); ok && str == "" && prm.Path && !prm.Required {
 			continue
 		}
 		if l, ok := v.([]any); ok && len(l) == 0 && prm.Name == "target" {

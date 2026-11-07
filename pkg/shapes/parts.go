@@ -26,6 +26,35 @@ var (
 var partCache = geom.NewCache(1_000_000, geom.MeshWeight)
 
 func cachedPart(id string, v Values, model func(Values) *geom.Mesh) *geom.Mesh {
+	key := partKey(id, v)
+	if m, ok := partCache.Load(key); ok {
+		return m.(*geom.Mesh)
+	}
+	m := model(v)
+	b := m.Bounds()
+	m = m.Transform(geom.Translate(b.Center().Neg()))
+	partCache.Store(key, m)
+	partCentres.Store(key, b.Center())
+	return m
+}
+
+// partCentres keeps where each cached part's bounds centre was before it
+// was centred.
+var partCentres = geom.NewCache(100_000, nil)
+
+// partCentre is where a part's mesh was centred from: its bounds centre in
+// the frame its model built it in.
+func partCentre(id string, v Values, model func(Values) *geom.Mesh) geom.Vec3 {
+	key := partKey(id, v)
+	if c, ok := partCentres.Load(key); ok {
+		return c.(geom.Vec3)
+	}
+	c := model(v).Bounds().Center()
+	partCentres.Store(key, c)
+	return c
+}
+
+func partKey(id string, v Values) string {
 	keys := make([]string, 0, len(v.Num))
 	for k := range v.Num {
 		keys = append(keys, k)
@@ -36,14 +65,7 @@ func cachedPart(id string, v Values, model func(Values) *geom.Mesh) *geom.Mesh {
 	for _, k := range keys {
 		fmt.Fprintf(&sb, "|%s=%g", k, v.Num[k])
 	}
-	if m, ok := partCache.Load(sb.String()); ok {
-		return m.(*geom.Mesh)
-	}
-	m := model(v)
-	b := m.Bounds()
-	m = m.Transform(geom.Translate(b.Center().Neg()))
-	partCache.Store(sb.String(), m)
-	return m
+	return sb.String()
 }
 
 func registerPart(list *[]string, id, label, color string, params []Param, model func(Values) *geom.Mesh) {
@@ -284,56 +306,6 @@ func counterboreModel(v Values) *geom.Mesh {
 
 // --- mechanical ------------------------------------------------------------------------
 
-// involuteOutline is a spur gear's outline: module m, z teeth, 20°
-// pressure angle, first tooth on +X.
-func involuteOutline(m float64, z int) []Pt {
-	z = max(z, 8)
-	alpha := 20 * math.Pi / 180
-	r := m * float64(z) / 2
-	rb, ra, rf := r*math.Cos(alpha), r+m, r-1.25*m
-	inv := func(rho float64) float64 {
-		if rho <= rb {
-			return 0
-		}
-		t := math.Sqrt(rho*rho/(rb*rb) - 1)
-		return t - math.Atan(t)
-	}
-	invA := math.Tan(alpha) - alpha
-	half := func(rho float64) float64 { return math.Pi/(2*float64(z)) + invA - inv(rho) }
-	r0 := math.Max(rb, rf)
-	polar := func(rho, a float64) Pt { return Pt{rho * math.Cos(a), rho * math.Sin(a)} }
-	var out []Pt
-	const fl = 10
-	for k := 0; k < z; k++ {
-		c := 2 * math.Pi * float64(k) / float64(z)
-		// root, then the flank up, tip, flank down
-		if rf < rb {
-			out = append(out, polar(rf, c-half(rb)))
-		}
-		for i := 0; i <= fl; i++ {
-			rho := r0 + (ra-r0)*float64(i)/fl
-			out = append(out, polar(rho, c-half(rho)))
-		}
-		for i := 1; i < 4; i++ {
-			out = append(out, polar(ra, c-half(ra)+2*half(ra)*float64(i)/4))
-		}
-		for i := fl; i >= 0; i-- {
-			rho := r0 + (ra-r0)*float64(i)/fl
-			out = append(out, polar(rho, c+half(rho)))
-		}
-		if rf < rb {
-			out = append(out, polar(rf, c+half(rb)))
-		}
-		// root arc to the next tooth
-		next := c + 2*math.Pi/float64(z)
-		a0, a1 := c+half(r0), next-half(r0)
-		for i := 1; i < 4; i++ {
-			out = append(out, polar(rf, a0+(a1-a0)*float64(i)/4))
-		}
-	}
-	return out
-}
-
 func spurGearModel(v Values) *geom.Mesh {
 	m, z := v.Get("module", 1), int(v.Get("teeth", 20))
 	contours := [][]Pt{involuteOutline(m, z)}
@@ -568,6 +540,7 @@ func init() {
 		lslider("thickness", "Thickness", 0.5, 50, 0.5, 5, false),
 		lslider("back", "Back Height", 0.5, 30, 0.5, 4, false),
 	}, gearRackModel)
+	registerGears(mk)
 	registerPart(mk, "elbow", "Pipe Elbow", "#7a3fc0", []Param{
 		slider("angle", "Angle", 5, 360, 1, 90, false),
 		lslider("bend", "Bend Radius", 1, 100, 0.5, 15, false),

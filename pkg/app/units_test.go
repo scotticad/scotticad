@@ -46,7 +46,8 @@ func TestLengthSlidersAreMarked(t *testing.T) {
 	notLength := map[string]bool{"sides": true, "steps": true, "segments": true, "teeth": true, "points": true, "turns": true,
 		"rows": true, "cols": true, "knurls": true, "knuckles": true, "slots": true, "grooves": true, "lid": true, "panels": true,
 		"pattern": true, "dshaft": true, "smooth": true, "angle": true, "puff": true, "taper": true, "taperturns": true,
-		"tongs": true, "lobes": true, "rotation": true}
+		"tongs": true, "lobes": true, "rotation": true, "helix": true, "herringbone": true, "sun": true, "planet": true,
+		"planets": true}
 	for _, k := range shapes.All() {
 		for _, p := range k.Params {
 			if p.Kind != shapes.Slider || p.Length || p.Metric {

@@ -87,16 +87,7 @@ const (
 
 // fitView frames the selection, or every visible shape.
 func (a *App) fitView() {
-	var ns []*doc.Node
-	if len(a.ed.Sel) > 0 {
-		ns = a.ed.Selected()
-	} else {
-		for _, n := range a.ed.Doc.Nodes {
-			if !n.Hidden {
-				ns = append(ns, n)
-			}
-		}
-	}
+	ns := a.selectedOrVisible()
 	if len(ns) == 0 {
 		a.homeCamera(true)
 		return
@@ -124,10 +115,7 @@ func (a *App) setOrtho(on bool) {
 // fixed.
 func (a *App) zoomAt(x, y, f float64) {
 	a.anim = nil
-	p, ok := a.pickPoint(x, y)
-	if !ok {
-		p = a.cam.Target
-	}
+	p := a.zoomAnchor(x, y, f < 1)
 	nd := math.Max(minDist, math.Min(maxDist, a.cam.Dist*f))
 	f = nd / a.cam.Dist
 	a.cam.Target = p.Add(a.cam.Target.Sub(p).Mul(f))
@@ -143,6 +131,91 @@ func (a *App) startCameraDrag(btn int, x, y float64, m window.Mods) {
 	}
 	a.drag = &dragState{kind: kind, sx: x, sy: y, lx: x, ly: y}
 	a.w.SetCursor(window.CursorSizeAll)
+}
+
+// orbitCenterAt is where a click at (x, y) puts the center of rotation:
+// on the shape under it, else on the workplane, else at the current
+// center's depth. A click on the sky, or on a workplane seen nearly edge
+// on, slides the center across instead of sending it to the horizon.
+func (a *App) orbitCenterAt(x, y float64) geom.Vec3 {
+	if h, ok := a.pick(x, y, false, nil); ok {
+		return h.p
+	}
+	if p, ok := a.nearPlaneHit(x, y); ok {
+		return p
+	}
+	return a.atCenterDepth(x, y)
+}
+
+// zoomAnchor is the point a wheel zoom at (x, y) keeps still. Zooming in
+// goes toward what is under the cursor: the shape or the workplane there,
+// so the center of rotation comes onto it. Zooming out, and any zoom in an
+// orthographic view, keeps the point at the center's depth: about any
+// other point the center drifts nearer or farther with every step
+// (zooming out from inside a design would leave it far in front), and in
+// orthographic the drift is unseen until the next turn swings the view.
+func (a *App) zoomAnchor(x, y float64, in bool) geom.Vec3 {
+	if in && !a.cam.Ortho {
+		if h, ok := a.pick(x, y, false, nil); ok {
+			return h.p
+		}
+		if p, ok := a.nearPlaneHit(x, y); ok {
+			return p
+		}
+	}
+	return a.atCenterDepth(x, y)
+}
+
+// farPlane is how many camera distances away a workplane point under the
+// cursor may be for zooming toward it or turning about it. Farther, it is
+// near the horizon (or seen almost edge on): a zoom toward it would throw
+// the center of rotation several distances off, and the next turn would
+// swing the plate out of view.
+const farPlane = 3.0
+
+// nearPlaneHit is the workplane point under (x, y), if it is no more than
+// farPlane distances away.
+func (a *App) nearPlaneHit(x, y float64) (geom.Vec3, bool) {
+	if p, ok := a.planeHitW(x, y, 0); ok {
+		if q := a.ed.Work().Point(p); q.Sub(a.cam.Eye()).Len() <= farPlane*a.cam.Dist {
+			return q, true
+		}
+	}
+	return geom.Vec3{}, false
+}
+
+// atCenterDepth is the point under (x, y) as deep as the center of
+// rotation: on the plane through it, facing the camera.
+func (a *App) atCenterDepth(x, y float64) geom.Vec3 {
+	r := a.ray(x, y)
+	fwd := a.cam.Target.Sub(a.cam.Eye()).Norm()
+	if d := fwd.Dot(r.D); math.Abs(d) > 1e-9 {
+		return r.At(a.cam.Target.Sub(r.O).Dot(fwd) / d)
+	}
+	return a.cam.Target
+}
+
+// setOrbitCenter makes p the center of rotation, which is always the
+// middle of the view. In perspective the camera stays where it is and
+// turns to face p, so nothing zooms; in an orthographic view, where
+// distance doesn't show, it slides across.
+func (a *App) setOrbitCenter(p geom.Vec3) {
+	c := a.cam
+	if !c.Ortho {
+		d := c.Eye().Sub(p)
+		l := d.Len()
+		if l < 1e-6 {
+			return
+		}
+		c.Dist = math.Max(minDist, math.Min(maxDist, l))
+		c.Pitch = math.Max(-math.Pi/2+0.01, math.Min(math.Pi/2-0.01, math.Asin(d.Z/l)))
+		c.Yaw = math.Atan2(d.Y, d.X)
+	}
+	c.Target = p
+	a.animateTo(c)
+	const shown = 1500 * time.Millisecond
+	a.orbitMark = time.Now().Add(shown)
+	a.wakeAfter(shown) // to take the marker away
 }
 
 func (a *App) orbit(dx, dy float64) {
@@ -261,7 +334,7 @@ func (a *App) drawScene() {
 			}
 		}
 		if a.place != nil && a.place.ok {
-			sp = append(sp, render.ShadowPart{Mesh: a.place.mesh, M: a.place.m, Light: a.place.hole})
+			sp = append(sp, render.ShadowPart{Mesh: a.place.mesh, M: a.place.xf, Light: a.place.hole})
 		}
 		sc.RenderShadows(sp, srect, a.target.FBO, vx, vy, vw, vh)
 	}
@@ -325,21 +398,31 @@ func (a *App) drawScene() {
 		}
 	}
 
-	// opaque solids
-	for _, p := range parts {
-		if p.Hole || p.Transparent || p.top.Hidden {
-			continue
-		}
-		draw(p, render.Style{Model: p.M}, true)
+	// opaque solids. Those cut open (by Section view or the Split preview)
+	// come after the sheet: their cut face is drawn on the inside faces
+	// seen through the cut, a part's base among them, and that lies on the
+	// sheet, which would show through it
+	opened := func(p scenePart) bool {
+		return sectionOn && a.sectionCuts(p.top) || a.splitHalves(p.top) != nil
 	}
-
+	solids := func(cut bool) {
+		for _, p := range parts {
+			if p.Hole || p.Transparent || p.top.Hidden || opened(p) != cut {
+				continue
+			}
+			draw(p, render.Style{Model: p.M}, true)
+		}
+	}
+	solids(false)
 	if !below {
 		drawPlane()
-	} else {
-		gl.Enable(gl.BLEND)
-		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-		gl.DepthMask(false)
+		gl.Disable(gl.BLEND)
+		gl.DepthMask(true)
 	}
+	solids(true)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.DepthMask(false)
 	if a.ed.Workplane != nil {
 		// the active workplane: a green sheet with a border band and a
 		// coarse grid, in its own frame
@@ -578,11 +661,9 @@ func (a *App) drawViewCube() {
 	}
 	gl.Enable(gl.DEPTH_TEST)
 	a.scene.DrawMesh(cubeMesh, render.Style{Edges: true, Tint: tint})
-	gl.Disable(gl.DEPTH_TEST)
 	if a.cubeLabels == nil {
 		a.cubeLabels = buildCubeLabels()
 	}
-	gl.Enable(gl.DEPTH_TEST)
 	a.scene.DrawTris(a.cubeLabels, 1)
 	a.scene.VP, a.scene.Eye = saved, savedEye
 	vx, vy, vw, vh := a.glViewport()
@@ -657,9 +738,9 @@ func (a *App) drawGhosts() {
 	sc := a.scene
 	// tile being placed
 	if a.place != nil && a.place.ok {
-		st := render.Style{Model: a.place.m, Alpha: 0.55}
+		st := render.Style{Model: a.place.xf, Alpha: 0.55}
 		if a.place.hole {
-			st = holeStyle(a.place.m, 0.8)
+			st = holeStyle(a.place.xf, 0.8)
 		}
 		sc.DrawMesh(a.place.mesh, st)
 	}

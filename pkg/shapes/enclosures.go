@@ -42,7 +42,7 @@ func PartSize(kind string, v Values) geom.Vec3 {
 
 // registerAssembly registers an assembly kind. Its own mesh (library
 // thumbnail, placement preview) is all its parts in place.
-func registerAssembly(id, label, color string, params []Param, parts func(Values) []Placed) {
+func registerAssembly(list *[]string, id, label, color string, params []Param, parts func(Values) []Placed) {
 	merged := func(v Values) *geom.Mesh {
 		var ms []*geom.Mesh
 		for _, p := range parts(v) {
@@ -55,7 +55,7 @@ func registerAssembly(id, label, color string, params []Param, parts func(Values
 	k.build = func(s geom.Vec3, v Values) *geom.Mesh { return merged(v).FitTo(s) }
 	k.Size = k.natural(k.Defaults())
 	register(k)
-	HardwareKinds = append(HardwareKinds, id)
+	*list = append(*list, id)
 }
 
 // registerHiddenPart registers an assembly's part kind (not shown in the
@@ -282,7 +282,7 @@ func init() {
 	}
 	registerHiddenPart("projectbox-body", "Project Box", "#f7c51e", box, projectBoxBody)
 	registerHiddenPart("projectbox-lid", "Project Box Lid", "#f7c51e", box, projectBoxLid)
-	registerAssembly("projectbox", "Project Box", "#f7c51e", box, projectBoxParts)
+	registerAssembly(&HardwareKinds, "projectbox", "Project Box", "#f7c51e", box, projectBoxParts)
 
 	ext := []Param{
 		lslider("length", "Length", 20, 300, 1, 80, false),
@@ -297,5 +297,5 @@ func init() {
 	}
 	registerHiddenPart("extrudedbox-body", "Extruded Box", "#c3c8cd", ext, extrudedBody)
 	registerHiddenPart("extrudedbox-panel", "End Panel", "#2b2e33", ext, extrudedPanel)
-	registerAssembly("extrudedbox", "Extruded Box", "#c3c8cd", ext, extrudedParts)
+	registerAssembly(&HardwareKinds, "extrudedbox", "Extruded Box", "#c3c8cd", ext, extrudedParts)
 }

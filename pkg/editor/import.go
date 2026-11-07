@@ -70,7 +70,7 @@ func LoadMesh(path string, o ImportOptions) (m *geom.Mesh, err error) {
 	}
 	s := o.Scale
 	if o.Units == "in" {
-		s *= 25.4
+		s *= mmPerInch
 	}
 	if s != 1 {
 		m = m.Transform(geom.Scale(geom.V(s, s, s)))

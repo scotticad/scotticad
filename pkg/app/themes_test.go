@@ -8,25 +8,10 @@ import (
 	"github.com/scotticad/scotticad/pkg/render"
 )
 
-// hsl is c's hue (degrees), saturation and lightness.
-func hsl(c render.Color) (h, s, l float64) {
-	r, g, b := float64(c[0]), float64(c[1]), float64(c[2])
-	mx, mn := math.Max(r, math.Max(g, b)), math.Min(r, math.Min(g, b))
-	l = (mx + mn) / 2
-	if mx == mn {
-		return 0, 0, l
-	}
-	d := mx - mn
-	s = d / (1 - math.Abs(2*l-1))
-	switch mx {
-	case r:
-		h = math.Mod((g-b)/d, 6)
-	case g:
-		h = (b-r)/d + 2
-	default:
-		h = (r-g)/d + 4
-	}
-	return math.Mod(h*60+360, 360), s, l
+// contrast is the WCAG contrast ratio of two colours.
+func contrast(a, b render.Color) float64 {
+	la, lb := luminance(a), luminance(b)
+	return (math.Max(la, lb) + 0.05) / (math.Min(la, lb) + 0.05)
 }
 
 // The blue theme is the package's colour defaults: applying it changes
@@ -62,10 +47,6 @@ func TestBlueThemeIsTheDefault(t *testing.T) {
 // (WCAG AA, 4.5:1), and white still readable on its accent.
 func TestDarkTheme(t *testing.T) {
 	n := darkTheme.N
-	contrast := func(a, b render.Color) float64 {
-		la, lb := luminance(a), luminance(b)
-		return (math.Max(la, lb) + 0.05) / (math.Min(la, lb) + 0.05)
-	}
 	for name, bg := range map[string]render.Color{"chrome": n.Chrome, "raised": n.Raised, "hover": n.HoverBG, "code": n.CodeBG} {
 		if luminance(bg) > 0.05 {
 			t.Errorf("%s: luminance %.3f, not dark", name, luminance(bg))
@@ -98,10 +79,10 @@ func TestHueShift(t *testing.T) {
 	for _, c := range []render.Color{
 		render.RGB(0x2f, 0x7f, 0xe6), {0.80, 0.90, 0.97, 0.88}, {0.09, 0.78, 1.0, 1}, render.RGB(0x0e, 0x2a, 0x47),
 	} {
-		h0, s0, l0 := hsl(c)
+		h0, s0, l0 := rgbToHSL(c)
 		for _, deg := range []float64{-60, 90, 200} {
 			d := hueShift(c, deg)
-			h1, s1, l1 := hsl(d)
+			h1, s1, l1 := rgbToHSL(d)
 			if math.Abs(s1-s0) > 1e-5 || math.Abs(l1-l0) > 1e-5 || d[3] != c[3] {
 				t.Errorf("%v turned %v: s %.4f -> %.4f, l %.4f -> %.4f, alpha %v -> %v", c, deg, s0, s1, l0, l1, c[3], d[3])
 			}
@@ -137,7 +118,7 @@ func TestShiftedThemeKeepsBrightness(t *testing.T) {
 			}
 		}
 		// the workplane is toned down, not more vivid than the blue one
-		if _, s, _ := hsl(th.Plane); s > 0.8 {
+		if _, s, _ := rgbToHSL(th.Plane); s > 0.8 {
 			t.Errorf("%s plane: saturation %.2f", th.Name, s)
 		}
 	}
@@ -163,16 +144,16 @@ func TestThemeHues(t *testing.T) {
 			cs["select"] = render.Color{g.Select[0], g.Select[1], g.Select[2], 1}
 		}
 		for name, c := range cs {
-			if h, _, _ := hsl(c); h < tc.lo || h > tc.hi {
+			if h, _, _ := rgbToHSL(c); h < tc.lo || h > tc.hi {
 				t.Errorf("%s %s: hue %.0f°, outside %.0f-%.0f°", g.Name, name, h, tc.lo, tc.hi)
 			}
 		}
-		sel, _, _ := hsl(render.Color{g.Select[0], g.Select[1], g.Select[2], 1})
+		sel, _, _ := rgbToHSL(render.Color{g.Select[0], g.Select[1], g.Select[2], 1})
 		for name, c := range map[string]render.Color{
 			"construction plane": g.ShapeWP, "ruler band": g.RulerBand,
 			"bundle outline": {g.BundleChild[0], g.BundleChild[1], g.BundleChild[2], 1},
 		} {
-			h, _, _ := hsl(c)
+			h, _, _ := rgbToHSL(c)
 			if d := math.Abs(h - sel); math.Min(d, 360-d) < 50 {
 				t.Errorf("%s %s: hue %.0f°, too close to the selection's %.0f°", g.Name, name, h, sel)
 			}
@@ -184,10 +165,6 @@ func TestThemeHues(t *testing.T) {
 // (WCAG AA, 4.5:1) and white on its caramel buttons (3:1).
 func TestTanThemeReadable(t *testing.T) {
 	n := tanTheme.N
-	contrast := func(a, b render.Color) float64 {
-		la, lb := luminance(a), luminance(b)
-		return (math.Max(la, lb) + 0.05) / (math.Min(la, lb) + 0.05)
-	}
 	for name, bg := range map[string]render.Color{"chrome": n.Chrome, "raised": n.Raised, "hover": n.HoverBG} {
 		if c := contrast(n.Text, bg); c < 4.5 {
 			t.Errorf("text on %s: contrast %.2f", name, c)

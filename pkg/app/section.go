@@ -35,21 +35,27 @@ type sectionState struct {
 
 // sectionNodes are the shapes the view cuts.
 func (a *App) sectionNodes() []*doc.Node {
-	if a.section.ids != nil {
-		return a.ed.Doc.FindAll(a.section.ids)
-	}
 	var ns []*doc.Node
 	for _, n := range a.ed.Doc.Nodes {
-		if !n.Hidden {
+		if a.section.ids != nil && a.sectionAims(n) || a.section.ids == nil && !n.Hidden {
 			ns = append(ns, n)
 		}
 	}
 	return ns
 }
 
+// sectionAims reports whether the view's ids name top-level node n or a
+// shape inside it: shapes grouped while the view is pinned stay cut, as
+// part of their group.
+func (a *App) sectionAims(n *doc.Node) bool {
+	aimed := false
+	n.Walk(func(c *doc.Node) { aimed = aimed || slices.Contains(a.section.ids, c.ID) })
+	return aimed
+}
+
 // sectionCuts reports whether the view cuts top-level node n.
 func (a *App) sectionCuts(n *doc.Node) bool {
-	return a.section.on && (a.section.ids == nil || slices.Contains(a.section.ids, n.ID))
+	return a.section.on && (a.section.ids == nil || a.sectionAims(n))
 }
 
 // sectionBounds is what the plane spans and moves through: the shapes it
@@ -112,6 +118,20 @@ func (a *App) centreSection(keep float64) {
 	if a.eyeW().Axis(s.axis) > s.at {
 		s.keep = -1
 	}
+}
+
+// sectionJSON is the view as the API reports it. crosses is whether the
+// plane passes through the shapes it cuts: if it doesn't, nothing looks
+// cut.
+func (a *App) sectionJSON() map[string]any {
+	s := a.section
+	keep := doc.KeepAbove
+	if s.keep < 0 {
+		keep = doc.KeepBelow
+	}
+	b := doc.BoundsIn(a.sectionNodes(), a.ed.Work())
+	crosses := !b.IsEmpty() && b.Min.Axis(s.axis) < s.at && s.at < b.Max.Axis(s.axis)
+	return map[string]any{"axis": string(rune('x' + s.axis)), "at": s.at, "keep": keep, "ids": s.ids, "pinned": s.pinned, "crosses": crosses}
 }
 
 // sectionClip is the clip the view applies to the shapes it cuts.

@@ -1,7 +1,7 @@
 # benchy-loft.star - the 3DBenchy calibration boat rebuilt from ScottiCAD
 # shapes, its hull made as lofts (cad.add_loft): smooth, with no
-# stair-steps, in about 130 shapes and groups. (benchy-layered-slow.star is
-# the earlier prototype that stacks 55 layers instead - about 1,060 shapes
+# stair-steps, in about 130 shapes and groups. (benchy-layered-slow.star
+# builds the same boat from 55 stacked layers instead - about 1,060 shapes
 # and much slower; it is kept only as an example of what not to do.)
 #
 # 3DBenchy is by Creative Tools AB and has been in the public domain (CC0)

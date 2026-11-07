@@ -396,8 +396,8 @@ func (d *Document) ExportMesh(ids []int) *geom.Mesh {
 
 // ExportColours is ExportMesh for the formats with colours (OBJ, glTF,
 // 3MF): each colour's solids fused into one, the colours left apart, so a
-// slicer gets a part per filament. A piece
-// of several colours (a multicolour group) is fused only with itself.
+// slicer gets a part per filament. A piece of several colours (a
+// multicolour group) is fused only with itself.
 func (d *Document) ExportColours(ids []int) *geom.Mesh {
 	var order []geom.Color
 	byColour := map[geom.Color][]*geom.Mesh{}

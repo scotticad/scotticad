@@ -104,22 +104,21 @@ func (a *App) scriptCall(method string, params []byte) ([]byte, error) {
 		return nil, errors.New("a script can't close ScottiCAD")
 	case "run_script":
 		return nil, errors.New("a script can't start another script")
+	case "stop_script":
+		return nil, errors.New("a script can't stop scripts: press Stop")
 	}
 	p := args{}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	reply := make(chan apiResult, 1)
-	a.calls <- apiCall{method: method, params: p, reply: reply}
-	a.w.Wake()
-	r := <-reply
-	if r.err != nil {
-		return nil, r.err
+	r, err := a.Dispatch(method, p)
+	if err != nil {
+		return nil, err
 	}
-	if r.result == nil {
-		r.result = map[string]any{}
+	if r == nil {
+		r = map[string]any{}
 	}
-	return json.Marshal(r.result)
+	return json.Marshal(r)
 }
 
 // scriptOut receives output from the running script's goroutine.
@@ -617,9 +616,11 @@ func (a *App) drawConsole() {
 	a.editorRegion("con-input", ir, c.input, &c.inputView)
 }
 
-func clampConsole(h, max float64) float64 {
-	if h > max-120 {
-		h = max - 120
+// clampConsole keeps the panel at least conMinH tall and leaves the
+// viewport at least 120 px of the room.
+func clampConsole(h, room float64) float64 {
+	if h > room-120 {
+		h = room - 120
 	}
 	if h < conMinH {
 		h = conMinH
@@ -674,11 +675,7 @@ func (a *App) drawConsoleHeader(r render.Rect) {
 		b.Text(label, tr.X+10, tr.CY()-b.LineHeight(fontUI, false)/2, fontUI, false, col)
 		a.button("con-tab-"+name, tr, "", "", 0, func() {
 			c.script = isScript
-			if isScript {
-				c.focus = c.editor
-			} else {
-				c.focus = c.input
-			}
+			c.focusTab()
 		})
 		x += tr.W + 4
 	}
@@ -688,12 +685,12 @@ func (a *App) drawConsoleHeader(r render.Rect) {
 		click          func()
 		primary        bool
 	}
-	btns := []cbtn{{id: "con-close", tip: "Close the console", click: func() { c.open, c.focus = false, nil }}}
-	btns = append(btns,
-		cbtn{id: "con-savelog", label: "Save log", tip: "Save the transcript to a text file", click: a.saveLog},
-		cbtn{id: "con-copy", label: "Copy", tip: "Copy the transcript", click: func() { a.w.SetClipboard(c.transcript()) }},
-		cbtn{id: "con-clear", label: "Clear", tip: "Clear the transcript", click: func() { c.lines, c.scroll, c.selA, c.selB = nil, 0, tPos{}, tPos{} }},
-	)
+	btns := []cbtn{
+		{id: "con-close", tip: "Close the console", click: func() { c.open, c.focus = false, nil }},
+		{id: "con-savelog", label: "Save log", tip: "Save the transcript to a text file", click: a.saveLog},
+		{id: "con-copy", label: "Copy", tip: "Copy the transcript", click: func() { a.w.SetClipboard(c.transcript()) }},
+		{id: "con-clear", label: "Clear", tip: "Clear the transcript", click: func() { c.lines, c.scroll, c.selA, c.selB = nil, 0, tPos{}, tPos{} }},
+	}
 	if c.script {
 		btns = append(btns,
 			cbtn{id: "con-saveas", label: "Save as…", click: func() { a.saveScript(true) }},
@@ -742,11 +739,9 @@ func (a *App) drawConsoleHeader(r render.Rect) {
 			}
 			b.Text(t.label, br.X+24, br.CY()-b.LineHeight(fontUI, true)/2, fontUI, true, colOnColor)
 		default:
-			if a.isHot(t.id) {
-				b.RoundRect(br, 4, colHoverBG)
-			}
 			col := colText
 			if a.isHot(t.id) {
+				b.RoundRect(br, 4, colHoverBG)
 				col = colIconHover
 			}
 			b.TextCentered(t.label, br, fontUI, false, col)
@@ -1010,10 +1005,7 @@ func (a *App) transcriptKey(vk int, m window.Mods) bool {
 	default:
 		// typing goes to the prompt (or the Editor tab), as in a terminal
 		c.tfocus = false
-		c.focus = c.input
-		if c.script {
-			c.focus = c.editor
-		}
+		c.focusTab()
 		return a.consoleKey(vk, m)
 	}
 	a.w.Redraw()
@@ -1039,15 +1031,20 @@ func (a *App) toggleConsole() {
 	c.open = !c.open
 	c.unread = false
 	if c.open {
-		if c.script {
-			c.focus = c.editor
-		} else {
-			c.focus = c.input
-		}
+		c.focusTab()
 	} else {
 		c.focus = nil
 	}
 	a.w.Redraw()
+}
+
+// focusTab gives the keyboard to the showing tab's editor.
+func (c *console) focusTab() {
+	if c.script {
+		c.focus = c.editor
+	} else {
+		c.focus = c.input
+	}
 }
 
 // consoleJSON is the console's state for the API.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/scotticad/scotticad/pkg/geom"
@@ -174,7 +175,7 @@ func selfCrossing(c []Pt) (int, int, bool) {
 	for i := range order {
 		order[i] = i
 	}
-	sortBy(order, func(i int) float64 { return s[i].minX })
+	sort.SliceStable(order, func(a, b int) bool { return s[order[a]].minX < s[order[b]].minX })
 	var active []int
 	for _, i := range order {
 		keep := active[:0]
@@ -204,29 +205,6 @@ func selfCrossing(c []Pt) (int, int, bool) {
 		active = append(active, i)
 	}
 	return 0, 0, false
-}
-
-// sortBy stably sorts idx by key: a merge sort, as big outlines make an
-// insertion sort too slow.
-func sortBy(idx []int, key func(int) float64) {
-	if len(idx) < 2 {
-		return
-	}
-	m := len(idx) / 2
-	a := append([]int(nil), idx[:m]...)
-	b := append([]int(nil), idx[m:]...)
-	sortBy(a, key)
-	sortBy(b, key)
-	i, j := 0, 0
-	for k := range idx {
-		if j >= len(b) || (i < len(a) && key(a[i]) <= key(b[j])) {
-			idx[k] = a[i]
-			i++
-		} else {
-			idx[k] = b[j]
-			j++
-		}
-	}
 }
 
 func orient(a, b, c Pt) int {

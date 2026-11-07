@@ -36,7 +36,8 @@ func TestFixTJunctionsIsDeterministic(t *testing.T) {
 		p := V(5, y, 0)
 		m.Tris = append(m.Tris, Tri{P: [3]Vec3{p, V(5, y*1e5, -1), V(6, y*1e5, -1)}})
 	}
-	// and more ties along other edges, so the map order has many chances
+	// and more ties along other edges, so an unfixed tie order has many
+	// chances to show
 	for k := 1; k <= 8; k++ {
 		x := float64(k)
 		if k == 5 {

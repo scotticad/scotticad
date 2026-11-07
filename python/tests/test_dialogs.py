@@ -183,7 +183,7 @@ def test_export_runs_in_the_background(cad, tmp_path):
 
 
 def test_import_dialog_and_dropped_files(cad, tmp_path):
-    b = cad.add_shape("box")
+    cad.add_shape("box")
     stl = tmp_path / "cube.stl"
     cad.export(str(stl), selection_only=False)
     cad.new_design()

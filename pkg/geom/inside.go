@@ -5,6 +5,7 @@ import "math"
 // insideTest answers whether points are inside a closed mesh, robustly: by
 // signed ray crossings (winding along a ray) along each axis, which must
 // all agree.
+//
 // A BSP tree of noisy geometry (faces a few hundredths of a micron off
 // flat, as float32 imports are) can classify a whole region wrongly: a
 // sliver cut off by a near-coincident plane stands alone in a subtree,

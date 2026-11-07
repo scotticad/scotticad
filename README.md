@@ -1,12 +1,12 @@
 <h1 align="center">ScottiCAD</h1>
 
 <p align="center">
-  <b>Simple, fast 3D modelling for makers — on your own computer.</b><br>
+  <b>Simple, fast 3D modelling for makers, on your own computer.</b><br>
   Drag shapes together, cut holes, group, measure, and export for 3D printing.
 </p>
 
 <p align="center">
-  <b>✅ Runs locally — no cloud required.</b> No account, no sign-in, no upload, no internet connection needed.
+  <b>Runs locally.</b> No account, no sign-in, no uploads, no internet connection needed.
 </p>
 
 <p align="center">
@@ -45,11 +45,11 @@ Windows and Linux.
 1. On the [latest release](https://github.com/scotticad/scotticad/releases/latest)
    page, under **Assets**, download the Windows zip file
    (`scotticad-vX.Y.Z-windows-amd64.zip`, where X.Y.Z is the version).
-2. Unzip it anywhere — your Documents folder, a USB stick, wherever you like.
+2. Unzip it anywhere, such as your Documents folder or a USB stick.
 3. Run **`scotticad.exe`**. There is no installer and nothing else to set up.
 
 **Requirements:** Windows 10 or 11 (64-bit) and graphics that support
-OpenGL 3.3 — practically any PC from the last ten years.
+OpenGL 3.3, which almost any PC from the last ten years has.
 
 > **Windows SmartScreen:** because the program is new and not code-signed,
 > Windows may say it "protected your PC" the first time you run it. Click
@@ -92,25 +92,24 @@ and are not affected. Older versions are on the
 
 ## Why ScottiCAD?
 
-### 🔒 Your designs stay yours
+### Your designs stay yours
 Everything happens on your computer. Designs are ordinary files that you
-save where you want, back up how you want, and open years from now — even
-offline, even if this project disappears. Nothing is uploaded, tracked or
+save where you want, back up how you want, and open years from now,
+even offline or if this project disappears. Nothing is uploaded, tracked or
 locked behind an account.
 
-### ⚡ Fast and lightweight
+### Fast and lightweight
 A single small program with no installer, no browser and no background
-services. It opens in a moment, works smoothly with big designs, and
-combines shapes in the background so the window never freezes.
+services. It opens in a moment, and combines shapes in the background so
+the window doesn't freeze on big designs.
 
-### 🧱 Easy to learn
+### Easy to learn
 Model the way you'd build with blocks: drag shapes onto the build plate,
-turn some of them into **holes**, and **group** them to combine — the holes
+turn some of them into **holes**, and **group** them to combine: the holes
 are cut away. Resize with handles or type exact sizes, rotate with the
-protractor, and line things up with the align tool. If you've used a
-shape-based modeller before, you'll feel at home in minutes.
+protractor, and line things up with the align tool.
 
-### 📐 Precise when you need it
+### Precise when you need it
 - Exact sizes in **millimetres or inches**, typed straight into the
   on-screen dimensions
 - A **ruler** you can drop anywhere, measuring to edges or midpoints
@@ -119,10 +118,10 @@ shape-based modeller before, you'll feel at home in minutes.
   axes, so you can build on tilted surfaces
 - **Notes** pinned to parts, for the details you'll forget
 
-### 🛠️ Made for 3D printing
+### Made for 3D printing
 - **Export** to 3MF (with colours), STL, OBJ and GLB (glTF), or to SVG for
   laser cutting
-- **Import** STL, OBJ and SVG files — with the *Import* button, or by
+- **Import** STL, OBJ and SVG files, with the *Import* button or by
   dragging them onto the window (Windows)
 - Watertight exports, with holes and groups fully resolved
 - **Split** parts with a plane, **lay** any face flat on the build plate,
@@ -131,7 +130,7 @@ shape-based modeller before, you'll feel at home in minutes.
   settings
 - **Build plate presets** for popular printers
 
-### 🧩 A useful shape library
+### A shape library
 Basic shapes (box, cylinder, sphere, cone, pyramid, roof, wedge, trapezoid,
 tapered box, tube, ring, torus, polygon, star, heart and more), text in
 several fonts, and ready-made parametric parts:
@@ -139,7 +138,7 @@ several fonts, and ready-made parametric parts:
 | | |
 |---|---|
 | **Hardware & enclosures** | project box with lid, extruded box with end panels, PCB standoff, rounded plate, vent grille, hex nut and bolt, nut trap, countersunk and counterbored holes |
-| **Mechanical** | involute spur gear and rack, spring, pipe elbow, knurled knob, print-in-place hinge |
+| **Mechanical** | involute spur, helical and herringbone gears, ring gear, gear rack, print-in-place planetary gear set, spring, pipe elbow, knurled knob, print-in-place hinge |
 | **Parametric** | ISO metric thread, round-tooth gear, hyperboloid, spherical shell, square, diamond and honeycomb grids, diamond mesh, tube joint, fluted rod, puffy box |
 | **Computers & networking** | laptop, monitor, keyboard, server, equipment rack, router, switch, 3D printer and more |
 
@@ -147,28 +146,29 @@ Every part's controls (pitch, teeth, wall thickness…) stay editable after
 you place it. Search finds shapes by everyday words like *screw*, *enclosure*
 or *gear*.
 
-### 🗂️ Nothing is ever flattened
+### Nothing is ever flattened
 Groups keep their parts, so you can always ungroup and change your mind.
 Undo and redo reach back 500 steps.
 
-### 🤖 Scriptable
+### Scriptable
 Write scripts right inside ScottiCAD in a Python-style language
 ([Scripting](#scripting)), or drive it from your own Python programs
 through the automation API ([Automation](#automation)). Both use the same
-commands.
+commands, and so can an AI assistant
+([Using ScottiCAD with an AI assistant](#using-scotticad-with-an-ai-assistant)).
 
-### 🆓 Free and open source
+### Free and open source
 Apache-2.0 licensed. Use it for anything, including commercial work.
 
 ---
 
 ## Getting started
 
-1. **Add shapes** — drag them from the panel on the right onto the build plate.
-2. **Make a hole** — select a shape and press **H** (or click *Hole*).
-3. **Combine** — select the shapes and press **Ctrl+G**. Holes are cut away.
-4. **Size and place** — drag the handles, or click any dimension and type a number.
-5. **Export** — *File → Export…* and choose STL for your slicer, or 3MF to
+1. **Add shapes**: drag them from the panel on the right onto the build plate.
+2. **Make a hole**: select a shape and press **H** (or click *Hole*).
+3. **Combine**: select the shapes and press **Ctrl+G**. Holes are cut away.
+4. **Size and place**: drag the handles, or click any dimension and type a number.
+5. **Export**: *File → Export…* and choose STL for your slicer, or 3MF to
    keep the colours (a part per colour).
 
 Press **?** in the program for the full list of keyboard shortcuts. A few
@@ -210,7 +210,7 @@ work as in Python; there are no classes, `try`/`except` or `import`. The
 `cad` object has the same methods as the [Python client](#automation), so
 code moves easily between the two. Type `help()` for the list.
 
-The [`examples`](examples) folder has a dozen commented scripts (cable
+The [`examples`](examples) folder has over a dozen commented scripts (cable
 clips, knobs, a plant pot, a filament spool holder and more) and
 ready-to-open designs: the ones the scripts make, and some made by hand
 in the editor.
@@ -285,6 +285,32 @@ every command.
 
 ---
 
+## Using ScottiCAD with an AI assistant
+
+ScottiCAD is an [MCP](https://modelcontextprotocol.io) server, so an AI
+assistant such as Claude can build and change designs in it while you
+watch. Ask for "a wall bracket for a 25 mm pipe with two countersunk M4
+holes", and the assistant writes a script, runs it, takes a screenshot to
+check the result, and fixes what it sees. Everything happens in an
+ordinary ScottiCAD window, where you can take over with the mouse at any
+time, and each script it runs undoes with one **Ctrl+Z**.
+
+For Claude Code, with the full path to `scotticad.exe` (Windows) or
+`scotticad` (Linux) where you unpacked it:
+
+```
+claude mcp add scotticad -- C:\Tools\ScottiCAD\scotticad.exe --mcp
+```
+
+That starts a ScottiCAD window when the assistant needs one. To work
+with a ScottiCAD you've already opened instead, start it with
+`scotticad --api 127.0.0.1:47800` and use
+`scotticad --mcp-connect 127.0.0.1:47800`.
+[docs/mcp.md](docs/mcp.md) covers both, other assistants, and how to limit
+which files the assistant can reach.
+
+---
+
 ## Building from source
 
 You need [Go](https://go.dev/dl/) 1.25 or newer. Any Go from 1.21 on also
@@ -329,7 +355,7 @@ packages for that version: the Windows zip and the Linux tarballs.
 
 ## Contributing
 
-Bug reports and ideas are welcome — please open an
+Bug reports and ideas are welcome: open an
 [issue](https://github.com/scotticad/scotticad/issues). Pull requests are
 welcome too; run `.\build.ps1 -Test` (or `make test`) before
 submitting.

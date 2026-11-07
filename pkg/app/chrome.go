@@ -94,7 +94,7 @@ type tool struct {
 
 // leftToolsW is the width the left group (clipboard and undo) needs on the
 // toolbar: leftGroupW with the toolbar's margin before it and the gap after.
-const leftToolsW = 10 + 6*toolBtnW + 10 + 12
+const leftToolsW = 10 + leftGroupW + 12
 
 // toolsEnd is where the right group of tools ends: at the shape panel.
 func (a *App) toolsEnd() float64 {
@@ -181,14 +181,17 @@ func (a *App) rightTools() []tool {
 	}
 }
 
+func (t tool) width() float64 {
+	if t.caret {
+		return 18
+	}
+	return toolBtnW
+}
+
 func toolsWidth(ts []tool) float64 {
 	w := 0.0
 	for _, t := range ts {
-		if t.caret {
-			w += 18
-		} else {
-			w += toolBtnW
-		}
+		w += t.width()
 	}
 	return w
 }
@@ -221,11 +224,7 @@ func (a *App) drawToolbar() {
 	x := end - toolsWidth(right)
 	for _, t := range right {
 		a.toolButton(t, x, y)
-		if t.caret {
-			x += 18
-		} else {
-			x += toolBtnW
-		}
+		x += t.width()
 	}
 
 	// Import / Export / Scripting
@@ -240,15 +239,11 @@ func (a *App) drawToolbar() {
 		{"scripting", "Scripting", a.con.open, a.toggleConsole},
 	} {
 		br := render.Rect{X: bx, Y: y + 8, W: 74, H: toolbarH - 16}
-		bg := colChrome
+		bg, c := colChrome, colText
 		if a.isHot(t.id) || t.active {
-			bg = colHoverBG
+			bg, c = colHoverBG, colIconHover
 		}
 		b.RoundRect(br, 4, bg)
-		c := colText
-		if a.isHot(t.id) || t.active {
-			c = colIconHover
-		}
 		b.TextCentered(t.label, br, fontUI, false, c)
 		if t.id == "scripting" && a.con.unread && !a.con.open {
 			b.Circle(br.X+br.W-8, br.Y+7, 3.5, colBlue) // new output
@@ -260,11 +255,7 @@ func (a *App) drawToolbar() {
 
 func (a *App) toolButton(t tool, x, y float64) {
 	b := a.batch
-	w := toolBtnW
-	if t.caret {
-		w = 18
-	}
-	r := render.Rect{X: x, Y: y + (toolbarH-34)/2, W: w, H: 34}
+	r := render.Rect{X: x, Y: y + (toolbarH-34)/2, W: t.width(), H: 34}
 	hot := a.isHot(t.id) && t.enabled
 	c, accent := colIcon, colIconAccent
 	switch {
@@ -363,6 +354,9 @@ var shapeKeywords = map[string]string{
 	"counterbore":  "counterbored socket cap screw hole",
 	"spurgear":     "gear involute cog wheel teeth",
 	"gearrack":     "rack linear gear teeth",
+	"helicalgear":  "gear helical herringbone double helix involute cog wheel teeth",
+	"ringgear":     "gear internal annulus involute teeth",
+	"planetary":    "gear planetary epicyclic sun planet ring print in place bearing fidget spinner",
 	"elbow":        "pipe tube bend curved",
 	"spring":       "coil helix",
 	"knob":         "knurled potentiometer dial handle",
@@ -535,11 +529,10 @@ func (a *App) drawShapePanel() {
 	tw := pr.W / 3
 	for i, t := range tabs {
 		r := render.Rect{X: pr.X + float64(i)*tw, Y: pr.Y + 6, W: tw, H: 44}
-		c := colTabIcon
 		if a.isHot(t.id) || t.active {
 			b.RoundRect(r.Inset(6), 4, colBlueLight)
 		}
-		drawIcon(b, t.icon, render.Rect{X: r.CX() - 14, Y: r.CY() - 14, W: 28, H: 28}, c)
+		drawIcon(b, t.icon, render.Rect{X: r.CX() - 14, Y: r.CY() - 14, W: 28, H: 28}, colTabIcon)
 		a.button(t.id, r, t.tip, t.key, tipBelow, t.click)
 	}
 	b.Fill(render.Rect{X: pr.X + 10, Y: pr.Y + 56, W: pr.W - 20, H: 1}, colBorder)
@@ -638,7 +631,6 @@ func (a *App) drawShapePanel() {
 		if sp, ok := a.thumbs[thumbKey(t.kind, t.hole)]; ok && a.thumbGen == a.batch.Generation {
 			b.Image(sp, inner.Inset(2), render.Color{1, 1, 1, 1})
 		}
-		kind, hole := t.kind, t.hole
 		visible := r
 		if visible.Y < area.Y {
 			visible.H -= area.Y - visible.Y
@@ -650,9 +642,9 @@ func (a *App) drawShapePanel() {
 		if visible.H <= 0 {
 			continue
 		}
-		a.reg(region{r: visible, id: id, cursor: window.CursorHand, tip: kindLabel(kind, hole), tipSide: tipBelow,
+		a.reg(region{r: visible, id: id, cursor: window.CursorHand, tip: kindLabel(t.kind, t.hole), tipSide: tipBelow,
 			press: func(x, y float64, m window.Mods) func(float64, float64, bool) {
-				return a.tilePress(kind, hole, x, y)
+				return a.tilePress(t.kind, t.hole, x, y)
 			}})
 	}
 	b.PopClip()

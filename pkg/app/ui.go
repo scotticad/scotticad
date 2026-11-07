@@ -361,6 +361,9 @@ func (a *App) fieldChar(r rune) bool {
 	return true
 }
 
+// caretPhase reports whether a blinking text caret is in its shown half.
+func caretPhase() bool { return (time.Now().UnixMilli()/530)%2 == 0 }
+
 // drawFieldText renders the active field (or a static value) into r.
 func (a *App) drawFieldText(id string, r render.Rect, value string, size float64, center bool, col render.Color) {
 	b := a.batch
@@ -379,7 +382,7 @@ func (a *App) drawFieldText(id string, r render.Rect, value string, size float64
 		} else {
 			b.Text(f.text, x, y, size, false, col)
 			cx := x + b.TextWidth(f.text[:f.cursor], size, false)
-			if (time.Now().UnixMilli()/530)%2 == 0 || a.drag != nil {
+			if caretPhase() || a.drag != nil {
 				b.Fill(render.Rect{X: cx, Y: y + 1, W: 1.2, H: lh - 2}, colText)
 			}
 			a.blink = true
@@ -470,7 +473,7 @@ func (a *App) drawFieldTextWrapped(id string, r render.Rect, value string, size 
 		}
 		l := lines[li]
 		cx := r.X + b.TextWidth(value[l[0]:min(max(f.cursor, l[0]), l[1])], size, false)
-		if (time.Now().UnixMilli()/530)%2 == 0 || a.drag != nil {
+		if caretPhase() || a.drag != nil {
 			b.Fill(render.Rect{X: cx, Y: r.Y + float64(li)*lh + 1, W: 1.2, H: lh - 2}, colText)
 		}
 		a.blink = true

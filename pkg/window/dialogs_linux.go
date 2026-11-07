@@ -44,20 +44,20 @@ func parseFilters(filter []string) []filterSpec {
 }
 
 func (w *Window) OpenFile(title string, filter ...string) (string, bool) {
-	return w.fileDialog(false, title, "", "", parseFilters(filter))
+	return w.fileDialog(false, title, "", parseFilters(filter))
 }
 
 // SaveFile asks for a path to save to; initial is the suggested file name
 // (or path), defExt the extension added when the user types none.
 func (w *Window) SaveFile(title, initial, defExt string, filter ...string) (string, bool) {
-	p, ok := w.fileDialog(true, title, initial, defExt, parseFilters(filter))
+	p, ok := w.fileDialog(true, title, initial, parseFilters(filter))
 	if ok && defExt != "" && filepath.Ext(p) == "" {
 		p += "." + strings.TrimPrefix(defExt, ".")
 	}
 	return p, ok
 }
 
-func (w *Window) fileDialog(save bool, title, initial, defExt string, filters []filterSpec) (string, bool) {
+func (w *Window) fileDialog(save bool, title, initial string, filters []filterSpec) (string, bool) {
 	p, ok, err := w.portalDialog(save, title, initial, filters)
 	if err == nil {
 		return p, ok

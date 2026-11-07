@@ -6,7 +6,7 @@ as a command, including simulated mouse and keyboard input and clicking
 named on-screen controls. This document describes the API and every
 command.
 
-There are three ways in:
+There are four ways in:
 
 - **Python**: the client in [`python/scotticad`](../python/scotticad)
   starts ScottiCAD and wraps every command in a method.
@@ -15,6 +15,8 @@ There are three ways in:
   [Scripting](../README.md#scripting)).
 - **Any language**: the API is JSON-RPC 2.0 over a TCP socket, one JSON
   object per line.
+- **AI assistants**: `scotticad --mcp` offers most of these methods as
+  MCP tools (see [mcp.md](mcp.md)).
 
 All lengths are millimetres and all angles degrees, whatever units the
 design shows. Methods that act on "the selection" also take `ids`, a list
@@ -43,6 +45,8 @@ Other options:
 | `--headless` | a hidden window, for automated tests |
 | `--width`, `--height` | the window's size in logical pixels (200 to 16384; default 1600 × 1000) |
 | `--scale` | the interface scale (0.5 to 5; 2 is 200%); default: the display's |
+| `--root DIR` | limit the files that API calls and scripts open, save, import, export or screenshot to the folder DIR; relative paths resolve against it, and a path outside it is an error |
+| `--mcp`, `--mcp-connect`, `--mcp-tools` | serve MCP for an AI assistant (see [mcp.md](mcp.md)) |
 | `--version` | print the version and exit |
 
 A design file named on the command line is opened at start.
@@ -154,7 +158,7 @@ reference is made from: every method with its parameters.
 - **Settings and tools**: [`set_units`](#set_units), [`set_snap`](#set_snap), [`set_build_plate`](#set_build_plate), [`set_settings`](#set_settings), [`place_ruler`](#place_ruler), [`remove_ruler`](#remove_ruler), [`toggle_construction_plane`](#toggle_construction_plane), [`attach_construction_plane`](#attach_construction_plane), [`set_tool`](#set_tool)
 - **Camera and output**: [`get_camera`](#get_camera), [`set_camera`](#set_camera), [`home_view`](#home_view), [`fit_view`](#fit_view), [`screenshot`](#screenshot), [`project`](#project), [`get_ui_state`](#get_ui_state), [`list_controls`](#list_controls), [`list_handles`](#list_handles), [`click_control`](#click_control)
 - **Input simulation (window coordinates in logical px)**: [`mouse_move`](#mouse_move), [`mouse_down`](#mouse_down), [`mouse_up`](#mouse_up), [`click`](#click), [`drag`](#drag), [`wheel`](#wheel), [`key`](#key), [`type_text`](#type_text)
-- **Scripting**: [`run_script`](#run_script), [`get_console`](#get_console), [`script_api`](#script_api)
+- **Scripting**: [`run_script`](#run_script), [`stop_script`](#stop_script), [`get_console`](#get_console), [`script_api`](#script_api)
 - **Automated runs**: [`answer_dialogs`](#answer_dialogs), [`close_window`](#close_window), [`lose_capture`](#lose_capture), [`drop_files`](#drop_files), [`stats`](#stats), [`quit`](#quit)
 
 ### Design files
@@ -713,17 +717,18 @@ Python: `cad.lay_flat(normal, ids=None)` returns nothing
 
 #### `set_section`
 
-Section view: hide everything on one side of a plane square to an axis of the current plane (the view only; the design is unchanged).
+Section view: hide everything on one side of a plane square to an axis of the current plane (the view only; the design is unchanged). Each call aims it afresh. Returns the view, with crosses false if the plane misses the shapes it cuts.
 
-Python: `cad.set_section(on=True, axis=None, at=None, keep=None, pin=None)` returns nothing
+Python: `cad.set_section(on=True, axis=None, at=None, keep=None, pin=None, ids=None)`
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
 | `on` | bool | optional | default true |
 | `axis` | axis | optional | x, y or z; default y |
-| `at` | float | optional | where along the axis, mm; default: the design's middle |
+| `at` | float | optional | where along the axis, mm; default: the middle of what it cuts |
 | `keep` | string | optional | which side shows: above or below (the + or - side); default: the side away from the camera |
-| `pin` | bool | optional | stay open when the selection changes |
+| `pin` | bool | optional | stay open when the selection changes; default true |
+| `ids` | int[] | optional | the shapes to cut (a shape inside a group cuts the group); default every shape |
 
 ### Filament
 
@@ -896,7 +901,7 @@ Python: `cad.set_tool(tool)` returns nothing
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
-| `tool` | string | required | none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, layflat, cruise |
+| `tool` | string | required | none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, layflat, orbit_center, cruise |
 
 ### Camera and output
 
@@ -934,13 +939,13 @@ Python: `cad.fit_view()` returns nothing
 
 #### `screenshot`
 
-Render the window to a PNG.
+Render the window to a PNG: written to path, or without one returned in the reply as base64 (png).
 
 Python: `cad.screenshot(path)`
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
-| `path` | string | required |  |
+| `path` | string | optional | PNG file to write |
 
 #### `project`
 
@@ -956,7 +961,7 @@ Python: `cad.project(x, y, z)`
 
 #### `get_ui_state`
 
-Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.
+Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; the center of rotation's marker (where it is drawn, and its setting); in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.
 
 Python: `cad.ui_state()`
 
@@ -1098,6 +1103,12 @@ Python: `cad.run_script(...)` (not in scripts: a script can't start another scri
 | `code` | string | required | the script |
 | `name` | string | optional | file name for errors |
 | `cwd` | string | optional | folder relative paths resolve against |
+
+#### `stop_script`
+
+Stop the running script, as the console's Stop button does; stopped is false if none was running.
+
+Python: `cad.call("stop_script", ...)`
 
 #### `get_console`
 

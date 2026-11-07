@@ -137,7 +137,7 @@ def test_api_types_are_checked(cad):
 
 
 def test_a_note_takes_several_lines(cad):
-    b = cad.add_shape("box")
+    cad.add_shape("box")
     cad.click_control("tab-notes")
     cad.click(*cad.project(0, 0, 20))
     cad.type_text("one\ntwo")

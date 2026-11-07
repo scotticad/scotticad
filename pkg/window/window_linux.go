@@ -470,7 +470,7 @@ func (w *Window) handle(ev *xEvent) {
 		m := modsOf(ev.state())
 		switch b := ev.detail(); b {
 		case 1, 2, 3:
-			btn := map[uint32]int{1: Left, 2: Middle, 3: Right}[b]
+			btn := xButtons[b]
 			double := false
 			if btn == Left {
 				// two presses within half a second and a few pixels, as
@@ -495,7 +495,7 @@ func (w *Window) handle(ev *xEvent) {
 	case evButtonRelease:
 		x, y := ev.xy()
 		if b := ev.detail(); b >= 1 && b <= 3 {
-			btn := map[uint32]int{1: Left, 2: Middle, 3: Right}[b]
+			btn := xButtons[b]
 			w.buttons &^= 1 << btn
 			w.h.MouseUp(btn, float64(x), float64(y), modsOf(ev.state()))
 		}
@@ -511,6 +511,9 @@ func (w *Window) handle(ev *xEvent) {
 		}
 	}
 }
+
+// xButtons maps X's pointer button numbers to ours.
+var xButtons = map[uint32]int{1: Left, 2: Middle, 3: Right}
 
 func (w *Window) lostCapture() {
 	w.buttons = 0

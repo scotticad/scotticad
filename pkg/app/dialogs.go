@@ -322,14 +322,14 @@ func (a *App) drawSettings() {
 	}
 	s := a.settingsDraft
 	b := a.batch
-	r := a.modal(480, 476, "Settings")
+	r := a.modal(480, 476, "Settings") // fits the smallest window
 	x := r.X + 24
 	vx := r.X + 230
 	y := r.Y + 68
 	row := func(label string) float64 {
 		b.Text(label, x, y+13-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
 		yy := y
-		y += 44
+		y += 38
 		return yy
 	}
 	// background colour: the swatch opens the full colour picker
@@ -352,6 +352,9 @@ func (a *App) drawSettings() {
 	a.checkbox("set-shadows", vx, yy+5, "", s.ShowShadows, func(v bool) { s.ShowShadows = v })
 	yy = row("Show grid")
 	a.checkbox("set-grid", vx, yy+5, "", s.ShowGrid, func(v bool) { s.ShowGrid = v })
+	// like the theme, the user's own and applied at once
+	yy = row("Show center of rotation")
+	a.checkbox("set-orbit-marker", vx, yy+5, "", a.orbitMarker, a.setOrbitMarker)
 	yy = row("Zoom speed")
 	sr := render.Rect{X: vx + 36, Y: yy + 13, W: 140, H: 0}
 	b.Text("Slow", vx, yy+13-b.LineHeight(fontSmall, false)/2, fontSmall, false, colTextDim)
@@ -422,10 +425,12 @@ func (a *App) drawSettings() {
 	}
 	// buttons
 	a.textButton("set-reset", render.Rect{X: r.X + 24, Y: r.Y + r.H - 52, W: 120, H: 32}, "Reset default", false, func() {
-		d := doc.DefaultSettings()
-		*s = d
+		*s = doc.DefaultSettings()
 		a.bgColor = colBG
 		a.zoomSpeed = 1
+		if !a.orbitMarker {
+			a.setOrbitMarker(true)
+		}
 	})
 	a.primaryButton("set-close", render.Rect{X: r.X + r.W - 164, Y: r.Y + r.H - 52, W: 140, H: 32}, "Close settings", func() {
 		a.commitField()
@@ -573,8 +578,7 @@ func (a *App) drawExport() {
 		}
 		b.Text(f.name, br.X+12, br.Y+5, fontUI, true, nc)
 		b.Text(f.what, br.X+12, br.Y+23, fontSmall, false, colTextDim)
-		ff := f.ext
-		a.button(f.id, br, "", "", 0, func() { a.export(ff) })
+		a.button(f.id, br, "", "", 0, func() { a.export(f.ext) })
 		y += 46
 	}
 }

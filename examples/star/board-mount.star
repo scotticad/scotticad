@@ -167,7 +167,8 @@ def make_mount(key):
     # the board centred on the plate, which reaches past the standoffs (and
     # the VESA pattern, if any). Centred on the board, not on its holes: a
     # Pi 4 or 5 has its holes bunched at one end, away from the USB and
-    # Ethernet ports, so the plate reaches as far past the port end
+    # Ethernet ports, and the plate reaches as far past the port end as
+    # past the other
     xs = [x for x, _ in b["holes"]]
     ys = [y for _, y in b["holes"]]
     cx, cy = bw / 2, bh / 2                    # the board's middle

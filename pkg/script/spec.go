@@ -127,7 +127,7 @@ var Methods = []Method{
 	{Name: "set_filament_settings", API: "set_filament_settings", Params: []Param{d("material", nil), d("density", nil), d("diameter", nil),
 		d("layer_height", nil), d("line_width", nil), d("walls", nil), d("top_layers", nil), d("bottom_layers", nil), d("infill", nil),
 		d("price_per_kg", nil), d("calibration", nil)}},
-	{Name: "set_section", API: "set_section", Params: []Param{d("on", true), d("axis", nil), d("at", nil), d("keep", nil), d("pin", nil)}, None: true},
+	{Name: "set_section", API: "set_section", Params: []Param{d("on", true), d("axis", nil), d("at", nil), d("keep", nil), d("pin", nil), ids}},
 
 	// camera and output
 	{Name: "camera", API: "get_camera"},

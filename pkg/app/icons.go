@@ -98,6 +98,7 @@ const (
 	icZoomOut
 	icPersp
 	icOrtho
+	icOrbitCenter
 	icGridTab
 	icRulerTab
 	icNotesTab
@@ -241,6 +242,11 @@ func drawIconAccent(b *render.Batch, id int, r render.Rect, c, accent render.Col
 		if id == icOrtho {
 			p.fill(12, 3, 20, 7.5, 12, 12, 4, 7.5)
 		}
+	case icOrbitCenter:
+		// a point with an arrow turning around it
+		a.disc(12, 12, 2.2)
+		p.arc(12, 12, 8, 0, 300)
+		p.fill(18.4, 6.4, 17.2, 3.0, 14.8, 7.2)
 	case icGridTab:
 		p.rect(3, 3, 18, 18, 0)
 		for _, v := range []float64{7.5, 12, 16.5} {

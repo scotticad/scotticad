@@ -1,6 +1,6 @@
 # Builds the release packages for the version in VERSION:
 #   dist\scotticad-v<version>-windows-amd64.zip
-#       scotticad.exe, README.md, LICENSE, NOTICE, THIRD_PARTY_NOTICES.md
+#       scotticad.exe, README.md, RELEASE-NOTES.md, LICENSE, NOTICE, THIRD_PARTY_NOTICES.md
 #   dist\scotticad-v<version>-linux-amd64.tar.gz
 #   dist\scotticad-v<version>-linux-arm64.tar.gz
 #       scotticad, install.sh, the menu entry, icon and file type, and the
@@ -31,7 +31,7 @@ $env:GOWORK = 'off'
 
 # --- Windows: a zip ----------------------------------------------------------
 $zip = "dist\scotticad-v$version-windows-amd64.zip"
-go run ./tools/tarball -o $zip -mtime $epoch scotticad.exe README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md
+go run ./tools/tarball -o $zip -mtime $epoch scotticad.exe README.md RELEASE-NOTES.md LICENSE NOTICE THIRD_PARTY_NOTICES.md
 if ($LASTEXITCODE -ne 0) { Write-Host 'packaging failed' -ForegroundColor Red; exit 1 }
 $packages += $zip
 
@@ -52,7 +52,7 @@ foreach ($arch in 'amd64', 'arm64') {
     Remove-Item env:GOOS
     go run ./tools/tarball -o "dist/$name.tar.gz" -folder $name -mtime $epoch -exec scotticad,install.sh `
         "$stage/scotticad" packaging/linux/install.sh packaging/linux/scotticad.desktop packaging/linux/scotticad.svg `
-        packaging/linux/scotticad-mime.xml README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md
+        packaging/linux/scotticad-mime.xml README.md RELEASE-NOTES.md LICENSE NOTICE THIRD_PARTY_NOTICES.md
     if ($LASTEXITCODE -ne 0) { Write-Host 'packaging failed' -ForegroundColor Red; exit 1 }
     $env:GOOS = 'linux'
     Remove-Item -Recurse -Force $stage

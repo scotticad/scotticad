@@ -89,7 +89,6 @@ func (a *App) drawToolPanel(y float64, items []panelItem) render.Rect {
 func axisItems(prefix string, axis int, set func(int)) []panelItem {
 	var out []panelItem
 	for i, name := range []string{"X", "Y", "Z"} {
-		i := i
 		out = append(out, panelItem{kind: panelToggle, id: prefix + string(rune('x'+i)), label: name, on: axis == i, click: func() { set(i) }})
 	}
 	return out

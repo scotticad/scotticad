@@ -274,6 +274,14 @@ func (b *Batch) glyph(f *fontFace, r rune) glyph { return b.glyphFor(f, r, false
 // and lifting the partly covered edge pixels gives it back its weight.
 const lightText = 0.6
 
+// lightLUT maps glyph coverage to lifted coverage (see lightText).
+var lightLUT = func() (lut [256]uint8) {
+	for i := range lut {
+		lut[i] = uint8(math.Round(255 * math.Pow(float64(i)/255, lightText)))
+	}
+	return lut
+}()
+
 // isLight is whether text in c is drawn with lifted coverage.
 func isLight(c Color) bool { return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2] > 0.6 }
 
@@ -288,12 +296,8 @@ func (b *Batch) glyphFor(f *fontFace, r rune, light bool) glyph {
 		img := image.NewRGBA(image.Rect(0, 0, dr.Dx(), dr.Dy()))
 		draw.DrawMask(img, img.Bounds(), image.White, image.Point{}, mask, mp, draw.Src)
 		if light {
-			var lut [256]uint8
-			for i := range lut {
-				lut[i] = uint8(math.Round(255 * math.Pow(float64(i)/255, lightText)))
-			}
 			for i := range img.Pix { // white, premultiplied: every channel is the coverage
-				img.Pix[i] = lut[img.Pix[i]]
+				img.Pix[i] = lightLUT[img.Pix[i]]
 			}
 		}
 		g.sp = b.AddImage(img)

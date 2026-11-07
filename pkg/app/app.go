@@ -5,7 +5,6 @@ package app
 import (
 	"bytes"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -52,10 +51,11 @@ const (
 	modeRulerPlace
 	modeAlign
 	modeMirror
-	modeNotes     // the Notes tool: click a shape to pin a note
-	modeWorkplane // the Construction plane tool: click a shape to put a construction plane on it
-	modeSplit     // the Split tool: cut the selection with a plane
-	modeLayFlat   // the Lay flat tool: click a face to lay it on the current plane
+	modeNotes       // the Notes tool: click a shape to pin a note
+	modeWorkplane   // the Construction plane tool: click a shape to put a construction plane on it
+	modeSplit       // the Split tool: cut the selection with a plane
+	modeLayFlat     // the Lay flat tool: click a face to lay it on the current plane
+	modeOrbitCenter // the view button: click once to set the center of rotation
 )
 
 // App is the editor window.
@@ -67,6 +67,9 @@ type App struct {
 	target *render.Target
 	cam    render.Camera
 	anim   *camAnim
+	// orbitMark is when the center of rotation's marker, shown after the
+	// center is set, goes away
+	orbitMark time.Time
 
 	W, H   float64     // window size in logical pixels
 	vp     render.Rect // 3D viewport
@@ -165,6 +168,9 @@ type App struct {
 	fontScroll float64
 	titleDirty bool
 	zoomSpeed  float64
+	// orbitMarker is the preference for marking the center of rotation
+	// while the view turns and after it is set
+	orbitMarker bool
 
 	keysDown map[int]bool
 
@@ -190,6 +196,7 @@ type App struct {
 	calls    chan apiCall
 	headless bool
 	frames   int
+	root     string // Options.Root, absolute; "" for none
 
 	// cached on-plane text
 	watermark    []float32
@@ -204,6 +211,13 @@ type Options struct {
 	Width    int
 	Height   int
 	Scale    float64 // interface scale; 0: the display's
+	// Root limits the files the API and scripts may open, save, import,
+	// export or screenshot to one folder; relative paths resolve against
+	// it. "" for no limit.
+	Root string
+	// NoStartScreen opens on an empty design instead of the start screen
+	// (an MCP client is about to build one).
+	NoStartScreen bool
 }
 
 // New creates the window and the editor.
@@ -225,6 +239,11 @@ func New(o Options) (*App, error) {
 		calls:         make(chan apiCall, 64),
 		headless:      o.Headless,
 		importOpts:    editor.DefaultImportOptions(),
+	}
+	if o.Root != "" {
+		if err := a.setRoot(o.Root); err != nil {
+			return nil, err
+		}
 	}
 	w, err := window.New("ScottiCAD", o.Width, o.Height, !o.Headless, a, o.Scale)
 	if err != nil {
@@ -267,6 +286,7 @@ func New(o Options) (*App, error) {
 	a.initConsole()
 	a.loadFilament()
 	a.loadTheme()
+	a.loadViewPrefs()
 	a.loadRecent()
 	a.homeCamera(false)
 	if o.File != "" {
@@ -277,7 +297,7 @@ func New(o Options) (*App, error) {
 			a.restoreCamera()
 			a.noteRecent(o.File)
 		}
-	} else if !o.Headless {
+	} else if !o.Headless && !o.NoStartScreen {
 		a.popup = popStart // started on its own: the start screen
 	}
 	a.updateTitle()
@@ -1120,8 +1140,8 @@ func (a *App) drawToast() {
 	b.TextCentered(a.toast, r, fontUI, false, colOnColor)
 }
 
-// screenshotPNG renders a frame and writes it to path as a PNG.
-func (a *App) screenshotPNG(path string) error {
+// screenshotData renders a frame and returns it as a PNG.
+func (a *App) screenshotData() ([]byte, error) {
 	a.Frame()
 	img := a.target.Read(0, 0, a.target.W, a.target.H)
 	// the framebuffer's alpha is meaningless after blending; screenshots
@@ -1131,7 +1151,7 @@ func (a *App) screenshotPNG(path string) error {
 	}
 	var buf bytes.Buffer
 	if err := encodePNG(&buf, img); err != nil {
-		return err
+		return nil, err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644) // its error reported, close included
+	return buf.Bytes(), nil
 }

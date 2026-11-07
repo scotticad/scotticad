@@ -112,7 +112,7 @@ func glyphContours(s, fontName string, emMM float64) [][][]Pt {
 	var out [][]Pt
 	x := 0.0
 	var prev sfnt.GlyphIndex
-	for i, r := range s {
+	for _, r := range s {
 		gi, err := f.GlyphIndex(&buf, r)
 		if err != nil || gi == 0 {
 			switch {
@@ -128,7 +128,7 @@ func glyphContours(s, fontName string, emMM float64) [][][]Pt {
 			prev = 0 // nothing to kern against
 			continue
 		}
-		if i > 0 && prev != 0 {
+		if prev != 0 {
 			if k, err := f.Kern(&buf, prev, gi, fixed.I(ppem), font.HintingNone); err == nil {
 				x += float64(k) / 64 * scale
 			}

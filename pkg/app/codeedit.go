@@ -4,7 +4,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -125,19 +124,21 @@ func (e *codeEdit) replace(s string, typing bool) {
 	e.wantCol = -1
 }
 
-func (e *codeEdit) typeText(s string) {
+// cleanInput makes typed or pasted text the editor's own: line breaks as
+// "\n", tabs as spaces.
+func cleanInput(s string) string {
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
-	s = strings.ReplaceAll(s, "\t", strings.Repeat(" ", indentStep))
+	return strings.ReplaceAll(s, "\t", strings.Repeat(" ", indentStep))
+}
+
+func (e *codeEdit) typeText(s string) {
+	s = cleanInput(s)
 	e.replace(s, len(s) == 1 && s != "\n")
 }
 
 // paste inserts s as one undo step of its own (even a single character,
 // which typing would join to the typing around it).
-func (e *codeEdit) paste(s string) {
-	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
-	s = strings.ReplaceAll(s, "\t", strings.Repeat(" ", indentStep))
-	e.replace(s, false)
-}
+func (e *codeEdit) paste(s string) { e.replace(cleanInput(s), false) }
 
 // newline breaks the line, keeping its indentation and indenting one
 // more step after a line ending in ":".
@@ -420,22 +421,19 @@ var codeKeywords = map[string]bool{
 	"return": true, "while": true, "True": true, "False": true, "None": true,
 }
 
-// codeSpans splits one line into coloured runs (a line-by-line
-// highlighter: strings don't continue across lines).
-func codeSpans(line string) []struct {
+// codeSpan is a run of text in one syntax colour.
+type codeSpan struct {
 	s string
 	c render.Color
-} {
-	var out []struct {
-		s string
-		c render.Color
-	}
+}
+
+// codeSpans splits one line into coloured runs (a line-by-line
+// highlighter: strings don't continue across lines).
+func codeSpans(line string) []codeSpan {
+	var out []codeSpan
 	add := func(s string, c render.Color) {
 		if s != "" {
-			out = append(out, struct {
-				s string
-				c render.Color
-			}{s, c})
+			out = append(out, codeSpan{s, c})
 		}
 	}
 	i := 0
@@ -586,7 +584,7 @@ func (a *App) drawCode(e *codeEdit, r render.Rect, focused, gutter bool, prompt 
 		off += len(l) + 1
 	}
 	if focused {
-		if (time.Now().UnixMilli()/530)%2 == 0 {
+		if caretPhase() {
 			b.Fill(render.Rect{X: text.X + cx - e.left, Y: r.Y + float64(line-e.top)*lh + 1, W: 1.4, H: lh - 2}, colText)
 		}
 		a.blink = true

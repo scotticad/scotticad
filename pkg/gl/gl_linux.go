@@ -119,7 +119,8 @@ func Init() error {
 		sort.Strings(missing)
 		return fmt.Errorf("OpenGL 3.3 not available (missing %v); version %q", missing, GetString(VERSION))
 	}
-	// GLX resolves any name, so the version is what tells
+	// GLX resolves any name, even one the driver lacks: only the version
+	// string tells whether 3.3 is really there
 	if v := GetString(VERSION); !atLeast33(v) {
 		return fmt.Errorf("OpenGL 3.3 not available (the driver offers %q); "+
 			"software rendering may work: run with LIBGL_ALWAYS_SOFTWARE=1", v)

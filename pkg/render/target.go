@@ -20,27 +20,17 @@ func NewTarget(samples int32) *Target { return &Target{Samples: samples} }
 
 // Resize (re)allocates storage when the size changes.
 func (t *Target) Resize(w, h int32) {
+	// a minimized window is 0×0: clamp first, or every frame rebuilds
+	w, h = max(w, 1), max(h, 1)
 	if w == t.W && h == t.H && t.FBO != 0 {
 		return
 	}
-	if w < 1 {
-		w = 1
-	}
-	if h < 1 {
-		h = 1
-	}
-	if t.FBO != 0 {
-		gl.DeleteFramebuffer(t.FBO)
-		gl.DeleteRenderbuffer(t.color)
-		gl.DeleteRenderbuffer(t.depth)
-		gl.DeleteFramebuffer(t.resolveFBO)
-		gl.DeleteTexture(t.resolveTex)
-	}
+	t.Delete()
 	t.W, t.H = w, h
 	// no more samples than the driver has (Mesa's software renderer has
 	// 4): more leaves the framebuffer incomplete, and nothing is drawn
-	if max := gl.GetInteger(gl.MAX_SAMPLES); max > 0 && t.Samples > max {
-		t.Samples = max
+	if most := gl.GetInteger(gl.MAX_SAMPLES); most > 0 && t.Samples > most {
+		t.Samples = most
 	}
 	t.color = gl.GenRenderbuffer()
 	gl.BindRenderbuffer(gl.RENDERBUFFER, t.color)

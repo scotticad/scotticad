@@ -210,12 +210,11 @@ func (a *App) drawCustomColor(r render.Rect, cur string) {
 			b.RoundRectStroke(tr, 14, 1, colBorder)
 			b.TextCentered(l, tr, fontUI, false, colText)
 		}
-		ii := i
-		a.button("color-mode-"+l, tr, "", "", 0, func() { a.colorMode = ii })
+		a.button("color-mode-"+l, tr, "", "", 0, func() { a.colorMode = i })
 	}
 
 	// three sliders with number fields
-	type chan_ struct {
+	type channel struct {
 		label string
 		val   float64 // in its own units
 		max   float64
@@ -223,10 +222,10 @@ func (a *App) drawCustomColor(r render.Rect, cur string) {
 		set   func(t float64, live bool)   // t in 0..1
 	}
 	rr, gg, bb := hexRGB(cur)
-	var chans []chan_
+	var chans []channel
 	if a.colorMode == 0 {
-		mk := func(label string, val float64, col func(t float64) (float64, float64, float64)) chan_ {
-			return chan_{label, math.Round(val * 255), 255,
+		mk := func(label string, val float64, col func(t float64) (float64, float64, float64)) channel {
+			return channel{label, math.Round(val * 255), 255,
 				func(t float64) render.Color {
 					r1, g1, b1 := col(t)
 					return render.Color{float32(r1), float32(g1), float32(b1), 1}
@@ -240,13 +239,13 @@ func (a *App) drawCustomColor(r render.Rect, cur string) {
 					a.setPickerHSV(hh, ss, vv, live)
 				}}
 		}
-		chans = []chan_{
+		chans = []channel{
 			mk("Red", rr, func(t float64) (float64, float64, float64) { return t, gg, bb }),
 			mk("Green", gg, func(t float64) (float64, float64, float64) { return rr, t, bb }),
 			mk("Blue", bb, func(t float64) (float64, float64, float64) { return rr, gg, t }),
 		}
 	} else {
-		chans = []chan_{
+		chans = []channel{
 			{"Hue", math.Round(h), 360, func(t float64) render.Color { return hsvColor(t*360, math.Max(s, 0.6), math.Max(v, 0.6)) },
 				func(t float64, live bool) { a.setPickerHSV(t*359.999, a.pickS, a.pickV, live) }},
 			{"Saturation", math.Round(s * 100), 100, func(t float64) render.Color { return hsvColor(h, t, v) },

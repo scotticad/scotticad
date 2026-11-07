@@ -34,18 +34,25 @@ func (r *Ruler) Arm(k int) geom.Vec3 {
 	return geom.V(math.Round(math.Cos(t)), math.Round(math.Sin(t)), 0)
 }
 
-// Measure returns where box lies along arm k, relative to the origin: the
-// near edge (the one closest to the origin's side), or the middle when the
-// ruler measures to midpoints.
-func (r *Ruler) Measure(box geom.Box, k int) float64 {
+// extent is the span of box's footprint along arm k, relative to the
+// origin.
+func (r *Ruler) extent(box geom.Box, k int) (lo, hi float64) {
 	d := r.Arm(k)
-	lo, hi := math.Inf(1), math.Inf(-1)
+	lo, hi = math.Inf(1), math.Inf(-1)
 	for _, x := range []float64{box.Min.X, box.Max.X} {
 		for _, y := range []float64{box.Min.Y, box.Max.Y} {
 			v := geom.V(x-r.Origin.X, y-r.Origin.Y, 0).Dot(d)
 			lo, hi = math.Min(lo, v), math.Max(hi, v)
 		}
 	}
+	return lo, hi
+}
+
+// Measure returns where box lies along arm k, relative to the origin: the
+// near edge (the one closest to the origin's side), or the middle when the
+// ruler measures to midpoints.
+func (r *Ruler) Measure(box geom.Box, k int) float64 {
+	lo, hi := r.extent(box, k)
 	switch {
 	case r.Mid:
 		return (lo + hi) / 2
@@ -60,14 +67,7 @@ func (r *Ruler) Measure(box geom.Box, k int) float64 {
 // placed at v is the one that will be nearer once moved: the low edge for
 // v ≥ 0, the high edge for v < 0 (or the middle with midpoints).
 func (r *Ruler) MoveFor(box geom.Box, k int, v float64) float64 {
-	d := r.Arm(k)
-	lo, hi := math.Inf(1), math.Inf(-1)
-	for _, x := range []float64{box.Min.X, box.Max.X} {
-		for _, y := range []float64{box.Min.Y, box.Max.Y} {
-			p := geom.V(x-r.Origin.X, y-r.Origin.Y, 0).Dot(d)
-			lo, hi = math.Min(lo, p), math.Max(hi, p)
-		}
-	}
+	lo, hi := r.extent(box, k)
 	switch {
 	case r.Mid:
 		return v - (lo+hi)/2
@@ -354,19 +354,7 @@ func (e *Editor) SelectionBounds() geom.Box { return doc.Bounds(e.Selected()) }
 
 func (e *Editor) NewDesign() {
 	e.Version++
-	e.Doc = doc.New()
-	e.Sel = nil
-	e.Hist.Clear()
-	e.drag = nil // a snapshot of the design being replaced
-	e.blobs.Reset()
-	if e.Replaced != nil {
-		e.Replaced()
-	}
-	e.Path = ""
-	e.Ruler = nil
-	e.Workplane = nil
-	e.saved = e.snapshot()
-	e.changed()
+	e.replace(doc.New(), "")
 }
 
 func (e *Editor) Open(path string) error {
@@ -380,6 +368,12 @@ func (e *Editor) Open(path string) error {
 		return fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
 	d.Prewarm()
+	e.replace(d, path)
+	return nil
+}
+
+// replace makes d the design, saved at path, with a fresh editing state.
+func (e *Editor) replace(d *doc.Document, path string) {
 	e.Doc = d
 	e.Sel = nil
 	e.Hist.Clear()
@@ -394,7 +388,6 @@ func (e *Editor) Open(path string) error {
 	e.Workplane = nil
 	e.saved = e.snapshot()
 	e.changed()
-	return nil
 }
 
 func (e *Editor) Save(path string) error {
@@ -755,13 +748,13 @@ func (e *Editor) Duplicate() []int {
 	srcM := map[int]geom.Mat4{}
 	e.edit(func() error {
 		ns := e.Doc.Duplicate(src, geom.Vec3{})
-		for i, n := range ns {
+		for _, n := range ns {
 			if repeat {
 				n.M = xf.Mul(n.M)
 				doc.Normalize(n)
 			}
 			ids = append(ids, n.ID)
-			srcM[n.ID] = ns[i].M
+			srcM[n.ID] = n.M
 		}
 		return nil
 	})
@@ -777,7 +770,7 @@ func (e *Editor) Duplicate() []int {
 // NoteMoved records the transform applied to a fresh duplicate so that
 // the next Ctrl+D repeats it.
 func (e *Editor) NoteMoved() {
-	if e.dupIDs == nil || !sameIDs(e.dupIDs, e.Sel) || len(e.dupIDs) == 0 {
+	if len(e.dupIDs) == 0 || !sameIDs(e.dupIDs, e.Sel) {
 		return
 	}
 	n := e.Doc.Find(e.dupIDs[0])
@@ -923,10 +916,7 @@ func (e *Editor) SetColorLive(hex string) {
 	if _, ok := geom.TryParseColor(hex); !ok {
 		return
 	}
-	for _, n := range e.Editable() {
-		n.Hole = false
-		doc.SetColor(n, hex)
-	}
+	e.paint(hex)
 	e.changed()
 }
 
@@ -934,13 +924,15 @@ func (e *Editor) SetColor(hex string) error {
 	if _, ok := geom.TryParseColor(hex); !ok {
 		return fmt.Errorf("bad colour %q", hex)
 	}
-	return e.edit(func() error {
-		for _, n := range e.Editable() {
-			n.Hole = false
-			doc.SetColor(n, hex)
-		}
-		return nil
-	})
+	return e.edit(func() error { e.paint(hex); return nil })
+}
+
+// paint colours the unlocked selection, making any holes solid.
+func (e *Editor) paint(hex string) {
+	for _, n := range e.Editable() {
+		n.Hole = false
+		doc.SetColor(n, hex)
+	}
 }
 
 func (e *Editor) SetTransparent(on bool) {
@@ -1252,7 +1244,7 @@ func (e *Editor) Nudge(axis int, steps float64) {
 	if s <= 0 {
 		s = 1
 		if e.Doc.Settings.Units == "in" {
-			s = 25.4 / 16
+			s = mmPerInch / 16
 		}
 	}
 	e.MoveIn(nil, geom.V(0, 0, 0).WithAxis(axis, s*steps))
@@ -1357,13 +1349,12 @@ func (e *Editor) setParam(id int, key string, v float64) error {
 	}
 	bottom := n.M.Point(geom.V(0, 0, -n.Size.Z/2))
 	k, _ := shapes.Lookup(n.Kind)
-	vals := n.Values
-	before, hasNatural := k.NaturalSize(vals())
+	before, hasNatural := k.NaturalSize(n.Values())
 	doc.SetParam(n, key, v)
 	if hasNatural {
 		// a generator parameter: keep the shape's scale, so its size
 		// follows the generator's own output
-		after, _ := k.NaturalSize(vals())
+		after, _ := k.NaturalSize(n.Values())
 		for i := 0; i < 3; i++ {
 			if b := before.Axis(i); b > 1e-9 {
 				n.Size = n.Size.WithAxis(i, n.Size.Axis(i)*after.Axis(i)/b)
@@ -1404,16 +1395,16 @@ func (e *Editor) SetTextLive(n *doc.Node, text, font string) {
 
 func (e *Editor) SetUnits(u string) error {
 	if u != "mm" && u != "in" {
-		return fmt.Errorf("units must be mm or in")
+		return errors.New("units must be mm or in")
 	}
 	return e.edit(func() error {
 		s := &e.Doc.Settings
 		if s.Units != u {
 			s.Units = u
 			if u == "in" {
-				s.Snap = 25.4 / 16
-				s.WorkplaneW = math.Round(s.WorkplaneW/25.4*100) / 100 * 25.4
-				s.WorkplaneL = math.Round(s.WorkplaneL/25.4*100) / 100 * 25.4
+				s.Snap = mmPerInch / 16
+				s.WorkplaneW = math.Round(s.WorkplaneW/mmPerInch*100) / 100 * mmPerInch
+				s.WorkplaneL = math.Round(s.WorkplaneL/mmPerInch*100) / 100 * mmPerInch
 			} else {
 				s.Snap = 1
 				s.WorkplaneW = math.Round(s.WorkplaneW)

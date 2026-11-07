@@ -458,8 +458,7 @@ func ExtrudeRegions(regs []Region, z0, z1 float64) *geom.Mesh {
 	return m.Clean()
 }
 
-// ExtrudeContours is a convenience wrapper: organise contours into regions
-// and extrude them.
+// ExtrudeContours organises contours into regions and extrudes them.
 func ExtrudeContours(contours [][]Pt, z0, z1 float64) *geom.Mesh {
 	return ExtrudeRegions(Regions(contours), z0, z1)
 }

@@ -1,6 +1,6 @@
 """End-to-end tests: drive ScottiCAD (headless) through the API.
 
-Run from the repository root after building (.\build.ps1 on Windows,
+Run from the repository root after building (build.ps1 on Windows,
 make on Linux):
     python -m pytest python/tests
 """
@@ -87,6 +87,26 @@ def test_enclosure_is_a_bundle_of_parts(cad):
     assert sorted(cad.node(p)["kind"] for p in parts) == ["extrudedbox-body", "extrudedbox-panel", "extrudedbox-panel"]
 
 
+def test_planetary_set_is_a_bundle_of_gears(cad):
+    g = cad.add_shape("planetary")
+    n = cad.node(g)
+    # ring and sun, then the planets
+    assert n["assembly"] == "planetary" and n["child_count"] == 2 + 5
+    # 18 + 42 teeth don't divide by 4, so the planets go as near even as fits
+    cad.set_param(g, "planets", 4)
+    assert cad.node(g)["child_count"] == 2 + 4
+    # 12 planets of 12 teeth don't fit round an 18-tooth sun: some are left out
+    cad.set_param(g, "planets", 12)
+    assert 2 + 1 < cad.node(g)["child_count"] < 2 + 12
+    cad.set_param(g, "planets", 3)
+    m, zr = 1.5, 18 + 2 * 12
+    # the rim is outside the tooth roots: a module and the tip gap (0.3) out
+    ring_out = m * zr / 2 + m + 0.3 + 5
+    assert math.isclose(cad.node(g)["bounds"]["size"][0], 2 * ring_out, abs_tol=0.05)
+    parts = cad.ungroup(ids=[g])
+    assert [cad.node(p)["name"] for p in parts] == ["Ring Gear", "Sun Gear"] + ["Planet Gear"] * 3
+
+
 def test_undo_redo(cad):
     cad.add_shape("sphere")
     cad.add_shape("cone")
@@ -157,7 +177,7 @@ def test_save_open_preserves_tree(cad, tmp_path):
     hole = cad.add_shape("cylinder", hole=True)
     inner = cad.group("union", ids=[box, hole])
     other = cad.add_shape("sphere", x=40)
-    outer = cad.group("bundle", ids=[inner, other])
+    cad.group("bundle", ids=[inner, other])
     p = str(tmp_path / "tree.scotticad")
     cad.save(p)
     cad.new_design()
@@ -251,7 +271,7 @@ def test_font_menu_selects_font(cad):
 def test_shape_clicks_leave_tooltips_enabled(cad):
     a = cad.add_shape("box", x=-30)
     b = cad.add_shape("box", x=30)
-    for i, (x, mods) in enumerate([(-30, []), (30, ["shift"])]):
+    for x, mods in [(-30, []), (30, ["shift"])]:
         sx, sy = cad.project(x, -10, 5)
         cad.click(sx, sy, mods=mods)
     assert sorted(cad.selection()["ids"]) == sorted([a, b])

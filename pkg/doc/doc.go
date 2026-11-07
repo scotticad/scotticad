@@ -278,9 +278,6 @@ func (n *Node) writeKey(sb *strings.Builder, own, colors bool) {
 	if !own {
 		hole, color = false, ""
 	}
-	if !colors && !own {
-		color = ""
-	}
 	fmt.Fprintf(sb, "%s|%v|%s|%v|%s|%v|", n.Kind, hole, color, n.Multicolor, n.GroupMode, n.Size)
 	if n.IsGroup() {
 		sb.WriteString("[")

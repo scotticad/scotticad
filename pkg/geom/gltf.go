@@ -104,7 +104,7 @@ func WriteGLB(w io.Writer, m *Mesh, name string) error {
 		na := addFloat(nrm, false)
 		prims = append(prims, primitive{Attributes: map[string]int{"POSITION": pa, "NORMAL": na}, Material: i})
 		mats = append(mats, material{
-			Name: "color_" + itoa(i),
+			Name: "color_" + strconv.Itoa(i),
 			PBR: map[string]any{
 				"baseColorFactor": []float64{lin(c.R), lin(c.G), lin(c.B), 1},
 				"metallicFactor":  0,
@@ -151,5 +151,3 @@ func WriteGLB(w io.Writer, m *Mesh, name string) error {
 	_, err = w.Write(out.Bytes())
 	return err
 }
-
-func itoa(i int) string { return strconv.Itoa(i) }

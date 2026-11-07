@@ -55,6 +55,15 @@ func prefsPath(name string) string {
 	return filepath.Join(dir, "ScottiCAD", name)
 }
 
+// writePrefs saves v as JSON at p, making the folder if need be.
+func writePrefs(p string, v any) error {
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(v, "", " ")
+	return os.WriteFile(p, b, 0o644)
+}
+
 func (a *App) loadFilament() {
 	a.fil.settings = filament.Defaults()
 	if a.headless {
@@ -114,6 +123,12 @@ func (a *App) filamentNodes(ids []int) []*doc.Node {
 	if ids != nil {
 		return a.ed.Doc.FindAll(ids)
 	}
+	return a.selectedOrVisible()
+}
+
+// selectedOrVisible is the selection, or every visible shape when nothing
+// is selected.
+func (a *App) selectedOrVisible() []*doc.Node {
 	if len(a.ed.Sel) > 0 {
 		return a.ed.Selected()
 	}
@@ -166,9 +181,9 @@ func (a *App) estimateFilament(ns []*doc.Node) filamentResult {
 				if _, ok := area[c]; !ok {
 					cs = append(cs, c)
 				}
-				a := t.Area()
-				area[c] += a
-				total += a
+				ta := t.Area()
+				area[c] += ta
+				total += ta
 			}
 			for _, c := range cs {
 				if total > 0 {

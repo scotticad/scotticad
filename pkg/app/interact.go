@@ -103,7 +103,7 @@ func (a *App) computeHandles() []handle {
 	if b.IsEmpty() {
 		return nil
 	}
-	if a.drag != nil && (a.drag.kind == dragRotate) {
+	if a.drag != nil && a.drag.kind == dragRotate {
 		b = a.drag.box
 	}
 	c := b.Center()
@@ -269,6 +269,8 @@ func (a *App) viewHover(x, y float64) {
 	case a.mode == modeLayFlat:
 		a.layHover = a.layFaceAt(x, y)
 		a.w.Redraw()
+	case a.mode == modeOrbitCenter:
+		a.w.Redraw() // the marker follows the pointer
 	}
 	if a.alignHover == nil && a.mirrorHover == 0 && a.place == nil {
 		if i := a.handleAt(x, y); i >= 0 && a.mode == modeNone {
@@ -296,7 +298,7 @@ func (a *App) viewCursor() int {
 	if !a.vp.Contains(a.mx, a.my) || (a.hot != "" && a.hot != "viewport") {
 		return window.CursorArrow
 	}
-	if a.place != nil || a.mode == modeMeasure || a.mode == modeRulerPlace {
+	if a.place != nil || a.mode == modeMeasure || a.mode == modeRulerPlace || a.mode == modeOrbitCenter {
 		return window.CursorCross
 	}
 	if a.alignHover != nil || a.mirrorHover > 0 {
@@ -349,6 +351,11 @@ func (a *App) viewPress(x, y float64, m window.Mods) {
 		}
 		ed.AttachWorkplane(id)
 		a.setMode(modeNone)
+		return
+	}
+	if a.mode == modeOrbitCenter && a.place == nil {
+		a.setMode(modeNone)
+		a.setOrbitCenter(a.orbitCenterAt(x, y))
 		return
 	}
 	// a click anywhere else closes an open note
@@ -446,10 +453,8 @@ func (a *App) beginNodeDrag(d *dragState) {
 func (d *dragState) restore() {
 	for n, st := range d.orig {
 		n.M, n.Size = st.M, st.Size
-		if st.Params != nil {
-			for k, v := range st.Params {
-				n.Params[k] = v
-			}
+		for k, v := range st.Params {
+			n.Params[k] = v
 		}
 	}
 }
@@ -476,12 +481,17 @@ func (a *App) startHandleDrag(h handle, x, y float64) {
 		d.center = d.box.Center()
 		d.ringR = a.protractorRadius(d.box, d.axis)
 		d.aStart, _ = a.planeAngle(x, y, d.center, d.axis)
-		// 0° is the axis direction from the centre towards the handle
-		u, v := rotBasis(d.axis)
-		dir := h.p.Sub(d.center)
-		d.a0 = math.Round(math.Atan2(dir.Dot(v), dir.Dot(u))/(math.Pi/2)) * (math.Pi / 2)
+		d.a0 = protractorZero(d.center, h.p, d.axis)
 	}
 	a.drag = d
+}
+
+// protractorZero is the protractor's 0° direction for a rotation handle at
+// p: from the centre c towards the handle, squared to the nearest axis.
+func protractorZero(c, p geom.Vec3, axis int) float64 {
+	u, v := rotBasis(axis)
+	dir := p.Sub(c)
+	return math.Round(math.Atan2(dir.Dot(v), dir.Dot(u))/(math.Pi/2)) * (math.Pi / 2)
 }
 
 // planeAngle intersects the cursor ray with the rotation plane and returns
@@ -983,8 +993,7 @@ type placeState struct {
 	kind string
 	hole bool
 	mesh *geom.Mesh
-	m    geom.Mat4 // ghost transform
-	xf   geom.Mat4 // placement transform (bottom centre at origin -> world)
+	xf   geom.Mat4 // placement and ghost transform (bottom centre at origin -> world)
 	ok   bool
 }
 
@@ -1020,7 +1029,7 @@ func (a *App) updatePlace(x, y float64) {
 	if !a.keysDown['C'] {
 		if h, ok := a.pick(x, y, false, nil); ok {
 			p.xf = geom.Translate(h.p).Mul(geom.RotateFromTo(geom.V(0, 0, 1), h.n))
-			p.m, p.ok = p.xf, true
+			p.ok = true
 			return
 		}
 	}
@@ -1030,7 +1039,7 @@ func (a *App) updatePlace(x, y float64) {
 	}
 	q = editorSnapXY(q, a.snap())
 	p.xf = a.ed.Work().Mul(geom.Translate(q))
-	p.m, p.ok = p.xf, true
+	p.ok = true
 }
 
 func (a *App) commitPlace() {

@@ -52,3 +52,18 @@ func TestRecentPrefs(t *testing.T) {
 		t.Errorf("read back %q", got)
 	}
 }
+
+// The center of rotation's marker is on unless the saved choice says off.
+func TestViewPrefs(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "sub", "view.json")
+	if got := readViewPrefs(p); got.OrbitMarker != nil {
+		t.Errorf("no file: %v", *got.OrbitMarker)
+	}
+	off := false
+	if err := writeViewPrefs(p, viewPrefs{OrbitMarker: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readViewPrefs(p); got.OrbitMarker == nil || *got.OrbitMarker {
+		t.Errorf("read back %v, want off", got.OrbitMarker)
+	}
+}

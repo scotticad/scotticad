@@ -91,6 +91,26 @@ itself.
   bearings, and a printed M8 axle and nut made with the ISO Thread shape.
   Every part is laid out flat on the build plate.
 
+### Print-in-place mechanisms
+
+These print in one piece with their moving parts already assembled, and
+need no supports. Each script's comments explain how the parts are kept
+apart by a clearance (`CLEAR`) and how to adjust it for your printer.
+
+- **[`folding-stand.star`](star/folding-stand.star)**: a phone or tablet
+  stand that prints flat, with two print-in-place hinges: a panel folds
+  up from the base and a prop swings out behind it into one of several
+  notches, each engraved with its angle.
+- **[`gear-spinner.star`](star/gear-spinner.star)**: a planetary gear
+  fidget spinner made from the Planetary Gear Set shape, with herringbone
+  teeth that hold the gears together, a finger dish on the sun and grips
+  round the ring.
+- **[`crank-reducer.star`](star/crank-reducer.star)**: a 40:1 hand-crank
+  gearbox: a split-ring planetary with two stages sharing their planets,
+  a cage holding them, and a dial that turns one tick per turn of the
+  crank. The comments work through the gear sizes and how every surface
+  avoids needing supports.
+
 ### The calibration boat: right and wrong ways to build it
 
 Three versions of the well-known 3DBenchy test boat, about 60 × 31 × 48 mm:

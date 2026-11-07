@@ -189,26 +189,19 @@ func (a *App) drawInspector() {
 		}
 	})
 
-	if !showProps {
-		endBody()
-		if a.popup == popColor {
-			a.drawColorPicker(r, a.pickerNodes(ns))
+	if showProps {
+		py := body.Y + body.H + 6
+		pr := render.Rect{X: r.X + 8, Y: py, W: r.W - 16, H: 28}
+		b.Text("Properties", pr.X+4, pr.CY()-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
+		pc := icChevronUp
+		if !a.propsOpen {
+			pc = icChevronDown
 		}
-		return
-	}
-
-	// Properties section
-	py := body.Y + body.H + 6
-	pr := render.Rect{X: r.X + 8, Y: py, W: r.W - 16, H: 28}
-	b.Text("Properties", pr.X+4, pr.CY()-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
-	pc := icChevronUp
-	if !a.propsOpen {
-		pc = icChevronDown
-	}
-	drawIcon(b, pc, render.Rect{X: pr.X + pr.W - 22, Y: pr.CY() - 8, W: 16, H: 16}, colIcon)
-	a.button("insp-props", pr, "", "", 0, func() { a.propsOpen = !a.propsOpen })
-	if a.propsOpen {
-		a.drawParams(n, params, pr.X, py+34, pr.W)
+		drawIcon(b, pc, render.Rect{X: pr.X + pr.W - 22, Y: pr.CY() - 8, W: 16, H: 16}, colIcon)
+		a.button("insp-props", pr, "", "", 0, func() { a.propsOpen = !a.propsOpen })
+		if a.propsOpen {
+			a.drawParams(n, params, pr.X, py+34, pr.W)
+		}
 	}
 	endBody()
 	if a.popup == popColor {
@@ -338,15 +331,13 @@ func (a *App) drawParams(n *doc.Node, ps []shapes.Param, x, y, w float64) {
 				ic = colIconHover
 			}
 			drawIcon(b, m.icon, render.Rect{X: r.CX() - 11, Y: r.CY() - 11, W: 22, H: 22}, ic)
-			mm := m.mode
-			a.button("insp-gt-"+m.mode, r, m.tip, "", tipBelow, func() { a.ed.SetGroupMode(mm) })
+			a.button("insp-gt-"+m.mode, r, m.tip, "", tipBelow, func() { a.ed.SetGroupMode(m.mode) })
 			bx += 48
 		}
 		return
 	}
 	units := a.units()
 	for _, p := range ps {
-		p := p
 		id := "param-" + p.Key
 		switch p.Kind {
 		case shapes.Slider:
@@ -543,12 +534,18 @@ func fmtSlider(v float64, p shapes.Param, units string) string {
 	if !p.Length || units != "in" {
 		return fmtParam(v, p)
 	}
-	s := strconv.FormatFloat(v/25.4, 'f', 3, 64)
+	return trimDecimals(v/25.4, 3) + `"`
+}
+
+// trimDecimals formats v with at most prec decimals, trailing zeros
+// dropped and never "-0".
+func trimDecimals(v float64, prec int) string {
+	s := strconv.FormatFloat(v, 'f', prec, 64)
 	s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
 	if s == "" || s == "-0" {
 		s = "0"
 	}
-	return s + `"`
+	return s
 }
 
 // inchStep is the slider step in inches for one of stepMM millimetres: the
@@ -568,12 +565,7 @@ func fmtParam(v float64, p shapes.Param) string {
 	if p.Int {
 		return strconv.Itoa(int(math.Round(v)))
 	}
-	s := strconv.FormatFloat(v, 'f', 2, 64)
-	s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
-	if s == "" || s == "-0" {
-		s = "0"
-	}
-	return s
+	return trimDecimals(v, 2)
 }
 
 // numberField is a text field with stepper arrows.
@@ -665,8 +657,7 @@ func (a *App) drawColorPicker(insp render.Rect, ns []*doc.Node) {
 			b.RoundRectStroke(tr, 13, 1, colBorder)
 			b.TextCentered(l, tr, fontSmall, false, colText)
 		}
-		ii := i
-		a.button("color-tab-"+l, tr, "", "", 0, func() { a.colorTab = ii })
+		a.button("color-tab-"+l, tr, "", "", 0, func() { a.colorTab = i })
 	}
 	cur := solidColor(ns)
 	group := len(ns) == 1 && ns[0].IsGroup()
@@ -714,8 +705,7 @@ func (a *App) drawColorPicker(insp render.Rect, ns []*doc.Node) {
 			if hex == "#ffffff" {
 				b.Ring(cx, cy, sw/2, 1, colBorder)
 			}
-			hx := hex
-			a.button(id, rectAround(cx, cy, sw/2+2), "", "", 0, func() { a.ed.SetColor(hx) })
+			a.button(id, rectAround(cx, cy, sw/2+2), "", "", 0, func() { a.ed.SetColor(hex) })
 		}
 	}
 	y += 3*(sw+gap) + 6

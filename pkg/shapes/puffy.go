@@ -54,6 +54,8 @@ func init() {
 			slider("steps", "Steps", 2, 32, 1, 12, true),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
-			return PuffyMesh(s, v.Get("puff", 4), int(v.Get("steps", 12))).FitTo(s) // odd steps miss the faces' centres
+			// with odd steps no vertex lands on a face's centre, so the
+			// mesh falls short of s until fitted
+			return PuffyMesh(s, v.Get("puff", 4), int(v.Get("steps", 12))).FitTo(s)
 		}})
 }

@@ -360,9 +360,9 @@ func TestSplitPassBailsOnRunawayGrowth(t *testing.T) {
 }
 
 // The repair's work is bounded. testdata/stitch-runaway.obj.gz is eight
-// overlapping shells whose union is badly broken. Solidify unions them and repairs the result; a
-// stitch that split the same unclosable edges again and again would double
-// the mesh every pass. Each stitch round must close more than the best so
+// overlapping shells whose union is badly broken. Solidify unions them and
+// repairs the result; a stitch that split the same unclosable edges again
+// and again would double the mesh every pass. Each stitch round must close more than the best so
 // far, and the mesh may never pass the repair's budget.
 func TestFixTJunctionsIsBounded(t *testing.T) {
 	f, err := os.Open("testdata/stitch-runaway.obj.gz")

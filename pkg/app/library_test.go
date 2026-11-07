@@ -80,13 +80,13 @@ func TestSearchTiles(t *testing.T) {
 // get_ui_state names every tool mode and popup: a constant added without
 // a name would make it index past the end.
 func TestUIStateNames(t *testing.T) {
-	if len(modeNames) != int(modeLayFlat)+1 {
-		t.Errorf("%d mode names for %d modes", len(modeNames), modeLayFlat+1)
+	if len(modeNames) != int(modeOrbitCenter)+1 {
+		t.Errorf("%d mode names for %d modes", len(modeNames), modeOrbitCenter+1)
 	}
 	if len(popupNames) != int(popStart)+1 {
 		t.Errorf("%d popup names for %d popups", len(popupNames), popStart+1)
 	}
-	if modeNames[modeNotes] != "notes" || modeNames[modeLayFlat] != "layflat" || popupNames[popLibrary] != "library" {
+	if modeNames[modeNotes] != "notes" || modeNames[modeLayFlat] != "layflat" || modeNames[modeOrbitCenter] != "orbit_center" || popupNames[popLibrary] != "library" {
 		t.Error("the names are out of step with the constants")
 	}
 }

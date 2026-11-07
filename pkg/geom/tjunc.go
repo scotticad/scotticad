@@ -427,7 +427,8 @@ const slitTol = 1e-2
 // (used a different number of times each way) at the vertices lying within
 // onEps of it. A split triangle is re-fanned from its centroid, which
 // keeps every new triangle non-degenerate. It reports whether anything was
-// split; the welded mesh is the result either way.
+// split; the welded mesh is the result either way, except that m itself is
+// returned when splitting runs past its limit.
 func splitPass(m *Mesh, vi *vertexIndex, weld, onEps float64, weldable []bool) (*Mesh, bool) {
 	type vkey [3]int64
 	qk := func(p Vec3) vkey {

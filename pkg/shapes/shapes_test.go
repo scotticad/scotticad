@@ -249,3 +249,23 @@ func TestText(t *testing.T) {
 		t.Fatalf("size %v", s)
 	}
 }
+
+// A value out of its slider's range (as a damaged file might hold) is
+// clamped for the natural size as it is for the build, so the two agree
+// and a huge value can't build a huge mesh.
+func TestNaturalSizeClamps(t *testing.T) {
+	k, _ := Lookup("spring")
+	v := k.Defaults()
+	v.Num["turns"] = 1e9
+	done := make(chan geom.Vec3, 1)
+	go func() { s, _ := k.NaturalSize(v); done <- s }()
+	select {
+	case s := <-done:
+		v.Num["turns"] = 30 // the slider's maximum
+		if want, _ := k.NaturalSize(v); s.Sub(want).Len() > 1e-9 {
+			t.Errorf("natural size %v, want %v", s, want)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("NaturalSize built the unclamped value")
+	}
+}

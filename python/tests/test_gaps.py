@@ -223,7 +223,7 @@ def test_api_undo_during_a_canvas_drag(cad):
 def test_note_wraps_long_words(cad):
     """A note's box wraps at spaces, and breaks a word too long for a line
     anywhere; it stays at most 440 px wide and grows downward in lines."""
-    b = cad.add_shape("box")
+    cad.add_shape("box")
     cad.click_control("tab-notes")
     px, py = cad.project(0, 0, 20)
 

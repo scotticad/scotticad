@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"math"
 	"os"
-	"path/filepath"
 
 	"github.com/scotticad/scotticad/pkg/render"
 )
@@ -503,18 +502,13 @@ func readThemePref(p string) string {
 	return tp.Theme
 }
 
-func writeThemePref(p, name string) error {
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	b, _ := json.MarshalIndent(themePrefs{Theme: name}, "", " ")
-	return os.WriteFile(p, b, 0o644)
-}
+func writeThemePref(p, name string) error { return writePrefs(p, themePrefs{Theme: name}) }
 
-// loadTheme applies the theme the user chose last, or the default one.
+// loadTheme applies the theme the user chose last, or the default one
+// (always in headless runs, so tests neither see nor change the user's).
 func (a *App) loadTheme() {
 	name := ""
-	if p := prefsPath("theme.json"); p != "" {
+	if p := prefsPath("theme.json"); p != "" && !a.headless {
 		name = readThemePref(p)
 	}
 	applyTheme(themeNamed(name))
@@ -528,7 +522,7 @@ func (a *App) setTheme(t Theme) {
 		a.bgColor = t.N.BG
 	}
 	applyTheme(t)
-	if p := prefsPath("theme.json"); p != "" {
+	if p := prefsPath("theme.json"); p != "" && !a.headless {
 		if err := writeThemePref(p, t.Name); err != nil {
 			a.showToast("couldn't save the theme: " + err.Error())
 		}

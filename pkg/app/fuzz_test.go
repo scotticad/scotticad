@@ -53,9 +53,6 @@ func FuzzCheckParams(f *testing.F) {
 	f.Add(uint16(0), []byte(`{"x": " 1e999 ", "y": "nan", "z": "0x10", "ids": [1, "2"], "p": [1, 2], "q": null}`))
 	f.Add(uint16(0), []byte(`{"ids": 1e300, "v": [1e308, -1e308, 0], "n": "1 2"}`))
 	f.Fuzz(func(t *testing.T, mi uint16, raw []byte) {
-		if len(apiMethods) == 0 {
-			t.Skip()
-		}
 		m := apiMethods[int(mi)%len(apiMethods)]
 		p := args{}
 		if err := json.Unmarshal(raw, &p); err != nil {

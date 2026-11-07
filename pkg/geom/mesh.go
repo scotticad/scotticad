@@ -165,9 +165,9 @@ func (m *Mesh) FitTo(size Vec3) *Mesh {
 // EdgeCheck counts boundary and non-manifold edges after welding vertices
 // within eps. A watertight mesh returns (0, 0).
 func (m *Mesh) EdgeCheck(eps float64) (open, nonManifold int) {
-	// vertices within eps are one; rounded as floats (as int64, coordinates
-	// past 1e11 or so over a small eps would overflow, and distinct
-	// vertices collide); eps 0: exact
+	// vertices are welded by rounding p/eps, kept as a float: as an int64
+	// it would overflow for coordinates past about 1e11 times eps, and
+	// distinct vertices would collide. eps <= 0 compares exactly.
 	type key [3]float64
 	q := func(p Vec3) key {
 		if eps <= 0 {

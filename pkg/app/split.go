@@ -142,7 +142,6 @@ func (a *App) drawSplitPanel() {
 	items = append(items, axisItems("split-axis-", s.axis, func(i int) { s.axis = i; a.centreSplit() })...)
 	items = append(items, panelItem{kind: panelCaption, label: "   Keep"})
 	for _, k := range []struct{ id, label, keep string }{{"split-keep-both", "Both", doc.KeepBoth}, {"split-keep-below", below, doc.KeepBelow}, {"split-keep-above", above, doc.KeepAbove}} {
-		k := k
 		items = append(items, panelItem{kind: panelToggle, id: k.id, label: k.label, on: s.keep == k.keep, click: func() { s.keep = k.keep }})
 	}
 	items = append(items,

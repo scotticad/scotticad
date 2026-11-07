@@ -28,26 +28,6 @@ func (m affine) mul(n affine) affine {
 
 func (m affine) apply(p Pt) Pt { return Pt{m[0]*p.X + m[2]*p.Y + m[4], m[1]*p.X + m[3]*p.Y + m[5]} }
 
-// svgElem is one drawn element's outlines.
-type svgElem struct {
-	cs [][]Pt
-}
-
-// SVGContours parses an SVG document and returns its outlines in
-// millimetres with Y pointing up. Paths, rects, circles, ellipses,
-// polygons and polylines are supported along with nested transforms.
-func SVGContours(r io.Reader) ([][]Pt, error) {
-	es, err := svgElements(r)
-	if err != nil {
-		return nil, err
-	}
-	var out [][]Pt
-	for _, e := range es {
-		out = append(out, e.cs...)
-	}
-	return out, nil
-}
-
 // svgStyle reads a presentation property from an element: its style
 // attribute first, then the attribute itself; "" if neither sets it.
 func svgStyle(a map[string]string, name string) string {
@@ -59,16 +39,16 @@ func svgStyle(a map[string]string, name string) string {
 	return strings.TrimSpace(a[name])
 }
 
-func svgElements(r io.Reader) ([]svgElem, error) {
+// SVGContours parses an SVG document and returns its outlines in
+// millimetres with Y pointing up. Paths, rects, circles, ellipses,
+// polygons and polylines are supported along with nested transforms.
+func SVGContours(r io.Reader) ([][]Pt, error) {
 	dec := xml.NewDecoder(r)
 	dec.Strict = false
 	// the transform in force, inherited from groups
-	type state struct {
-		m affine
-	}
-	var stack []state
-	cur := state{m: identity2}
-	var out []svgElem
+	var stack []affine
+	cur := identity2
+	var out [][]Pt
 	rootSeen := false
 	skip := 0
 	for {
@@ -94,10 +74,10 @@ func svgElements(r io.Reader) ([]svgElem, error) {
 			}
 			if name == "svg" && !rootSeen {
 				rootSeen = true
-				cur.m = cur.m.mul(rootTransform(a))
+				cur = cur.mul(rootTransform(a))
 			}
 			if tr, ok := a["transform"]; ok {
-				cur.m = cur.m.mul(parseTransform(tr))
+				cur = cur.mul(parseTransform(tr))
 			}
 			if svgStyle(a, "display") == "none" {
 				skip = 1 // hidden, with everything inside it
@@ -124,20 +104,16 @@ func svgElements(r io.Reader) ([]svgElem, error) {
 				}
 				cs = [][]Pt{c}
 			}
-			var e svgElem
 			for _, c := range cs {
 				if len(c) < 3 {
 					continue
 				}
 				tc := make([]Pt, len(c))
 				for i, p := range c {
-					q := cur.m.apply(p)
+					q := cur.apply(p)
 					tc[i] = Pt{q.X, -q.Y}
 				}
-				e.cs = append(e.cs, tc)
-			}
-			if len(e.cs) > 0 {
-				out = append(out, e)
+				out = append(out, tc)
 			}
 		case xml.EndElement:
 			if skip > 0 {
@@ -290,8 +266,8 @@ func joinCrossing(cs [][]Pt) [][]Pt {
 // untangle splits an outline that crosses itself (a bowtie, a curve whose
 // closing line cuts back through it) at each crossing into loops that
 // don't, which triangulate; the even-odd handling of the loops then gives
-// the region. Outlines of more than 5000 points are left as they are (the
-// search is quadratic).
+// the region. The search is quadratic, so it gives up (leaving the rest as
+// it is) once it has checked a budget of edge pairs.
 func untangle(c []Pt) [][]Pt {
 	budget := 300_000_000 // edge pairs checked, in all: a second or so
 	return untangleN(c, &budget)
@@ -551,35 +527,11 @@ func numbers(s string) []float64 {
 	var out []float64
 	i := 0
 	for i < len(s) {
-		c := s[i]
-		if c == '-' || c == '+' || c == '.' || (c >= '0' && c <= '9') {
-			j := i
-			if s[j] == '-' || s[j] == '+' {
-				j++
-			}
-			dot := false
-			for j < len(s) {
-				if s[j] >= '0' && s[j] <= '9' {
-					j++
-				} else if s[j] == '.' && !dot {
-					dot = true
-					j++
-				} else if (s[j] == 'e' || s[j] == 'E') && j+1 < len(s) {
-					j++
-					dot = true // an exponent has no fraction: a dot after it starts the next number
-					if s[j] == '-' || s[j] == '+' {
-						j++
-					}
-				} else {
-					break
-				}
-			}
+		if numberStart(s[i]) {
+			j := numberEnd(s, i)
 			v, err := strconv.ParseFloat(s[i:j], 64)
 			if err == nil {
 				out = append(out, v)
-			}
-			if j == i {
-				j++
 			}
 			i = j
 			continue
@@ -587,6 +539,36 @@ func numbers(s string) []float64 {
 		i++
 	}
 	return out
+}
+
+func numberStart(c byte) bool { return c == '-' || c == '+' || c == '.' || (c >= '0' && c <= '9') }
+
+// numberEnd returns the end of the number starting at s[i]: an optional
+// sign, digits with at most one dot, and an exponent. "1.5.5" is two
+// numbers, as is "1e5.5" (an exponent has no fraction).
+func numberEnd(s string, i int) int {
+	j := i
+	if s[j] == '-' || s[j] == '+' {
+		j++
+	}
+	dot := false
+	for j < len(s) {
+		if s[j] >= '0' && s[j] <= '9' {
+			j++
+		} else if s[j] == '.' && !dot {
+			dot = true
+			j++
+		} else if (s[j] == 'e' || s[j] == 'E') && j+1 < len(s) {
+			j++
+			dot = true // a dot after the exponent starts the next number
+			if s[j] == '-' || s[j] == '+' {
+				j++
+			}
+		} else {
+			break
+		}
+	}
+	return j
 }
 
 func parseTransform(s string) affine {
@@ -674,7 +656,7 @@ func parsePath(d string) [][]Pt {
 				i++
 				return ch
 			}
-			if ch == '-' || ch == '+' || ch == '.' || (ch >= '0' && ch <= '9') {
+			if numberStart(ch) {
 				return 0 // implicit repeat
 			}
 			i++
@@ -690,31 +672,10 @@ func parsePath(d string) [][]Pt {
 			if i >= len(d) {
 				return nil, false
 			}
-			ch := d[i]
-			if !(ch == '-' || ch == '+' || ch == '.' || (ch >= '0' && ch <= '9')) {
+			if !numberStart(d[i]) {
 				return nil, false
 			}
-			j := i
-			if d[j] == '-' || d[j] == '+' {
-				j++
-			}
-			dot := false
-			for j < len(d) {
-				if d[j] >= '0' && d[j] <= '9' {
-					j++
-				} else if d[j] == '.' && !dot {
-					dot = true
-					j++
-				} else if (d[j] == 'e' || d[j] == 'E') && j+1 < len(d) {
-					j++
-					dot = true // an exponent has no fraction: a dot after it starts the next number
-					if d[j] == '-' || d[j] == '+' {
-						j++
-					}
-				} else {
-					break
-				}
-			}
+			j := numberEnd(d, i)
 			v, err := strconv.ParseFloat(d[i:j], 64)
 			if err != nil {
 				return nil, false

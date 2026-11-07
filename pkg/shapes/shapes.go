@@ -56,12 +56,14 @@ type Kind struct {
 	sections []Section
 }
 
-// NaturalSize returns the shape's unscaled size for p, if it has one.
+// NaturalSize returns the shape's unscaled size for p, if it has one. The
+// values are clamped as Build clamps them, so the size is that of the
+// shape Build makes.
 func (k *Kind) NaturalSize(p Values) (geom.Vec3, bool) {
 	if k.natural == nil {
 		return geom.Vec3{}, false
 	}
-	return k.natural(p), true
+	return k.natural(k.clamp(p)), true
 }
 
 // Values carries parameter values for a build.
@@ -73,6 +75,7 @@ type Values struct {
 	Sections []Section
 }
 
+// Get returns the value of parameter k, or def if it isn't set.
 func (v Values) Get(k string, def float64) float64 {
 	if x, ok := v.Num[k]; ok {
 		return x

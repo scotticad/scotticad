@@ -349,17 +349,13 @@ func (s *Scene) upload(m *geom.Mesh) *gpuMesh {
 // drawing it would scratch hairlines across flat faces. Sliver triangles
 // from CSG have meaningless normals and are ignored.
 func featureEdges(m *geom.Mesh, deg float64) []float32 {
-	type key [6]int64
-	q := func(p geom.Vec3) [3]int64 {
-		return [3]int64{int64(math.Round(p.X * 1e4)), int64(math.Round(p.Y * 1e4)), int64(math.Round(p.Z * 1e4))}
-	}
 	type info struct {
 		a, b  geom.Vec3
 		n     []geom.Vec3 // normals of reliable (non-sliver) faces
 		faces int
 		c     geom.Color
 	}
-	edges := map[key]*info{}
+	edges := map[edgeKey]*info{}
 	var order []*info
 	for _, t := range m.Tris {
 		e1, e2, e3 := t.P[1].Sub(t.P[0]), t.P[2].Sub(t.P[0]), t.P[2].Sub(t.P[1])
@@ -369,15 +365,9 @@ func featureEdges(m *geom.Mesh, deg float64) []float32 {
 		n := cr.Norm()
 		for i := 0; i < 3; i++ {
 			a, b := t.P[i], t.P[(i+1)%3]
-			qa, qb := q(a), q(b)
-			if qa == qb {
+			k, ok := edgeKeyOf(a, b)
+			if !ok {
 				continue
-			}
-			var k key
-			if qa[0] < qb[0] || (qa[0] == qb[0] && (qa[1] < qb[1] || (qa[1] == qb[1] && qa[2] < qb[2]))) {
-				k = key{qa[0], qa[1], qa[2], qb[0], qb[1], qb[2]}
-			} else {
-				k = key{qb[0], qb[1], qb[2], qa[0], qa[1], qa[2]}
 			}
 			e := edges[k]
 			if e == nil {
@@ -518,7 +508,8 @@ func (s *Scene) drawSilhouette(m *geom.Mesh, g *gpuMesh, st Style) {
 	ortho := s.VP[15] == 1 && s.VP[3] == 0 && s.VP[7] == 0 && s.VP[11] == 0
 	var dir geom.Vec3
 	if ortho {
-		// view direction for orthographic projections (third row of VP)
+		// orthographic: one view direction for every edge, found by
+		// unprojecting the near and far points at the screen's centre
 		inv2, _ := s.VP.Inverse()
 		p0, _ := inv2.Project(geom.V(0, 0, -1))
 		p1, _ := inv2.Project(geom.V(0, 0, 1))
@@ -554,27 +545,36 @@ func (s *Scene) drawSilhouette(m *geom.Mesh, g *gpuMesh, st Style) {
 	gl.DrawArrays(gl.LINES, 0, int32(len(data)/7))
 }
 
-func adjacency(m *geom.Mesh) []adjEdge {
-	type key [6]int64
+// edgeKey is an undirected edge by its end points rounded to 0.1 µm, the
+// lesser first, so the copies of a shared edge in its two faces match.
+type edgeKey [6]int64
+
+// edgeKeyOf is a-b's key; ok is false when the ends round to one point.
+func edgeKeyOf(a, b geom.Vec3) (k edgeKey, ok bool) {
 	q := func(p geom.Vec3) [3]int64 {
 		return [3]int64{int64(math.Round(p.X * 1e4)), int64(math.Round(p.Y * 1e4)), int64(math.Round(p.Z * 1e4))}
 	}
-	idx := map[key]int{}
+	qa, qb := q(a), q(b)
+	if qa == qb {
+		return k, false
+	}
+	if qa[0] < qb[0] || (qa[0] == qb[0] && (qa[1] < qb[1] || (qa[1] == qb[1] && qa[2] < qb[2]))) {
+		return edgeKey{qa[0], qa[1], qa[2], qb[0], qb[1], qb[2]}, true
+	}
+	return edgeKey{qb[0], qb[1], qb[2], qa[0], qa[1], qa[2]}, true
+}
+
+func adjacency(m *geom.Mesh) []adjEdge {
+	idx := map[edgeKey]int{}
 	var out []adjEdge
 	var count []int
 	for _, t := range m.Tris {
 		n := t.Normal()
 		for i := 0; i < 3; i++ {
 			a, b := t.P[i], t.P[(i+1)%3]
-			qa, qb := q(a), q(b)
-			if qa == qb {
+			k, ok := edgeKeyOf(a, b)
+			if !ok {
 				continue
-			}
-			var k key
-			if qa[0] < qb[0] || (qa[0] == qb[0] && (qa[1] < qb[1] || (qa[1] == qb[1] && qa[2] < qb[2]))) {
-				k = key{qa[0], qa[1], qa[2], qb[0], qb[1], qb[2]}
-			} else {
-				k = key{qb[0], qb[1], qb[2], qa[0], qa[1], qa[2]}
 			}
 			if j, ok := idx[k]; ok {
 				if count[j] == 1 {
@@ -611,23 +611,7 @@ func (s *Scene) DrawLines(l *Lines, alpha float32) { s.DrawLinesM(l, alpha, geom
 
 // DrawLinesM is DrawLines with the points given in model space.
 func (s *Scene) DrawLinesM(l *Lines, alpha float32, model geom.Mat4) {
-	if len(l.data) == 0 {
-		return
-	}
-	gl.UseProgram(s.lineProg)
-	gl.UniformMatrix4(s.lu["uVP"], s.VP.Float32())
-	gl.UniformMatrix4(s.lu["uModel"], model.Float32())
-	gl.Uniform4f(s.lu["uClip"], 0, 0, 0, 0)
-	if alpha == 0 {
-		alpha = 1
-	}
-	gl.Uniform1f(s.lu["uAlpha"], alpha)
-	gl.Uniform4f(s.lu["uOver"], 0, 0, 0, 0)
-	gl.BindVertexArray(s.lineVAO)
-	gl.BindBuffer(gl.ARRAY_BUFFER, s.lineVBO)
-	gl.BufferData(gl.ARRAY_BUFFER, l.data, gl.DYNAMIC_DRAW)
-	gl.DrawArrays(gl.LINES, 0, int32(len(l.data)/7))
-	gl.BindVertexArray(0)
+	s.drawLineProg(gl.LINES, l.data, alpha, model)
 }
 
 // DrawTris draws world-space coloured triangles (pos3+col4 per vertex)
@@ -636,6 +620,12 @@ func (s *Scene) DrawTris(data []float32, alpha float32) { s.DrawTrisM(data, alph
 
 // DrawTrisM is DrawTris with the vertices given in model space.
 func (s *Scene) DrawTrisM(data []float32, alpha float32, model geom.Mat4) {
+	s.drawLineProg(gl.TRIANGLES, data, alpha, model)
+}
+
+// drawLineProg draws pos3+col4 vertices with the line program, unclipped;
+// alpha 0 is opaque.
+func (s *Scene) drawLineProg(mode uint32, data []float32, alpha float32, model geom.Mat4) {
 	if len(data) == 0 {
 		return
 	}
@@ -651,7 +641,7 @@ func (s *Scene) DrawTrisM(data []float32, alpha float32, model geom.Mat4) {
 	gl.BindVertexArray(s.lineVAO)
 	gl.BindBuffer(gl.ARRAY_BUFFER, s.lineVBO)
 	gl.BufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW)
-	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(data)/7))
+	gl.DrawArrays(mode, 0, int32(len(data)/7))
 	gl.BindVertexArray(0)
 }
 

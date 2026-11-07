@@ -49,6 +49,7 @@ func (a *App) drawViewportOverlay() {
 	a.drawSplit()
 	a.drawSection()
 	a.drawMeasure()
+	a.drawOrbitCenter()
 	a.drawMarquee()
 	a.drawLabels()
 	a.drawGlow()
@@ -213,13 +214,11 @@ func (a *App) drawProtractor() {
 		return
 	}
 	R2, R3 := R*protBandOut, R*protOuter
-	// 0° points from the centre towards the handle, squared to the axes
 	var a0 float64
 	if dragging {
 		a0 = rd.a0
 	} else {
-		dir := hot.p.Sub(c)
-		a0 = math.Round(math.Atan2(dir.Dot(v), dir.Dot(u))/(math.Pi/2)) * (math.Pi / 2)
+		a0 = protractorZero(c, hot.p, axis)
 	}
 	const n = 96
 	ring := func(r float64, w float64, col render.Color) {
@@ -520,7 +519,6 @@ func (a *App) drawDims() {
 	if mid {
 		ze = (z0 + box.Max.Z) / 2
 	}
-	elev := ze
 	if show[3] {
 		// beside the height line, further out, so the two don't overlap
 		ex := zx - sx*off*1.6
@@ -536,8 +534,8 @@ func (a *App) drawDims() {
 				b.Line(x0, y0, x1, y1, 1.2, colRulerArrow)
 				arrowHeadSize(b, s0, s1, 8, colRulerArrow)
 			}
-			lx, ly := a.labelBeyond((x0+x1)/2, (y0+y1)/2, n, half, a.fmtLen(elev))
-			a.labels = append(a.labels, dimLabel{id: "dim-elev", x: lx, y: ly + 0.01, value: elev, signed: true, commit: func(v float64) {
+			lx, ly := a.labelBeyond((x0+x1)/2, (y0+y1)/2, n, half, a.fmtLen(ze))
+			a.labels = append(a.labels, dimLabel{id: "dim-elev", x: lx, y: ly + 0.01, value: ze, signed: true, commit: func(v float64) {
 				nb := boxNow()
 				if nb.IsEmpty() {
 					return
@@ -628,10 +626,9 @@ func (a *App) drawMoveBars() {
 		lx, ly := a.labelBeyond((s0[0]+s1[0])/2, (s0[1]+s1[1])/2, n, 6, a.fmtLen(d))
 		l := dimLabel{id: "move-" + "xy"[axis:axis+1], x: lx, y: ly, value: d, signed: true}
 		if editable {
-			ax := axis
 			l.commit = func(v float64) {
-				now := corner(ed.SelectionBoundsIn()).Axis(ax) - p0.Axis(ax)
-				ed.MoveIn(nil, geom.V(0, 0, 0).WithAxis(ax, v-now))
+				now := corner(ed.SelectionBoundsIn()).Axis(axis) - p0.Axis(axis)
+				ed.MoveIn(nil, geom.V(0, 0, 0).WithAxis(axis, v-now))
 				if k := a.moveKeep; k != nil {
 					k.rev = a.ed.Version // this edit keeps the bars up
 				}
@@ -640,8 +637,6 @@ func (a *App) drawMoveBars() {
 		a.labels = append(a.labels, l)
 	}
 }
-
-// --- ruler ---------------------------------------------------------------------------
 
 // drawWorkplaneGhost previews the Workplane tool: the plane the hovered
 // shape would carry, on its own bottom.
@@ -675,6 +670,8 @@ func (a *App) drawWorkplaneGhost() {
 		b.Line(s[i][0], s[i][1], s[j][0], s[j][1], 2, render.Color{colShapeWP[0], colShapeWP[1], colShapeWP[2], 0.9})
 	}
 }
+
+// --- ruler ---------------------------------------------------------------------------
 
 // drawRulerGhost shows the ruler tool following the pointer until it is
 // placed: a small L lying on the workplane with its arms on their outer
@@ -872,11 +869,10 @@ func (a *App) drawRuler() {
 			}
 		}
 		lx, ly := a.labelBeyond((x0+x1)/2, (y0+y1)/2, n, bw, a.fmtLen(cur))
-		kk := k
 		a.labels = append(a.labels, dimLabel{id: "ruler-" + "xy"[k:k+1], x: lx, y: ly, value: cur, signed: true, commit: func(v float64) {
 			now := doc.BoundsIn(ed.Doc.FindAll(ids), ed.Work())
 			if !now.IsEmpty() {
-				ed.MoveIn(ids, r.Arm(kk).Mul(r.MoveFor(now, kk, v)))
+				ed.MoveIn(ids, r.Arm(k).Mul(r.MoveFor(now, k, v)))
 			}
 		}})
 	}
@@ -920,9 +916,8 @@ func (a *App) drawLabels() {
 		if l.commit == nil {
 			continue
 		}
-		ll := l
 		a.reg(region{r: r, id: l.id, cursor: window.CursorIBeam, press: func(x, y float64, m window.Mods) func(float64, float64, bool) {
-			a.openLabel(ll.id, order)
+			a.openLabel(l.id, order)
 			return nil
 		}})
 	}
@@ -1114,6 +1109,43 @@ func (a *App) drawMarquee() {
 	b.Dashed(x0, y1, x0, y0, 1, 5, colMarquee)
 }
 
+// orbitMarkerAt is where on screen the center of rotation's marker goes,
+// if anywhere: while the button's mode is on, where a click would put the
+// center; and, unless the user turned it off in Settings, at the center
+// while the view is being turned and for a moment after it is set.
+func (a *App) orbitMarkerAt() (float64, float64, bool) {
+	var p geom.Vec3
+	d := a.drag
+	switch {
+	case a.mode == modeOrbitCenter && d == nil:
+		if !a.vp.Contains(a.mx, a.my) || (a.hot != "" && a.hot != "viewport") {
+			return 0, 0, false
+		}
+		p = a.orbitCenterAt(a.mx, a.my)
+	case !a.orbitMarker:
+		return 0, 0, false
+	case d != nil && (d.kind == dragOrbit || d.kind == dragCube), time.Now().Before(a.orbitMark):
+		p = a.cam.Target
+	default:
+		return 0, 0, false
+	}
+	return a.project(p)
+}
+
+func (a *App) drawOrbitCenter() {
+	x, y, ok := a.orbitMarkerAt()
+	if !ok {
+		return
+	}
+	b := a.batch
+	for _, s := range [][4]float64{{-11, 0, -4, 0}, {4, 0, 11, 0}, {0, -11, 0, -4}, {0, 4, 0, 11}} {
+		b.Line(x+s[0], y+s[1], x+s[2], y+s[3], 4, colOnColor)
+		b.Line(x+s[0], y+s[1], x+s[2], y+s[3], 2, colBlue)
+	}
+	b.Circle(x, y, 4.5, colOnColor)
+	b.Circle(x, y, 3, colBlue)
+}
+
 // --- banners and glow ---------------------------------------------------------------------
 
 func (a *App) bannerText() string {
@@ -1134,6 +1166,8 @@ func (a *App) bannerText() string {
 		return "Click on a shape to place a construction plane on it, or on the build plate to go back to it"
 	case a.mode == modeLayFlat:
 		return "Click a face to lay it flat. Press [Esc] to exit"
+	case a.mode == modeOrbitCenter:
+		return "Click to set the center of rotation. Press [Esc] to cancel"
 	case a.place != nil:
 		return "Hold [C] to ignore other shapes' surfaces"
 	case a.mode == modeVisibility:
@@ -1272,6 +1306,7 @@ func (a *App) drawLeftControls() {
 		id, tip, key string
 		icon         int
 		click        func()
+		active       bool
 	}
 	orthoTip := "Switch to flat view (Orthographic)"
 	orthoIcon := icPersp
@@ -1280,24 +1315,28 @@ func (a *App) drawLeftControls() {
 		orthoIcon = icOrtho
 	}
 	btns := []btn{
-		{"home", "Home view", "", icHome, func() { a.homeCamera(true) }},
-		{"fit", "Fit all in view", "F", icFit, a.fitView},
-		{"zoomin", "Zoom in", "+", icZoomIn, func() { a.zoomAt(a.vp.CX(), a.vp.CY(), 0.8) }},
-		{"zoomout", "Zoom out", "-", icZoomOut, func() { a.zoomAt(a.vp.CX(), a.vp.CY(), 1.25) }},
-		{"ortho", orthoTip, "", orthoIcon, func() { a.setOrtho(!a.cam.Ortho) }},
+		{"home", "Home view", "", icHome, func() { a.homeCamera(true) }, false},
+		{"fit", "Fit all in view", "F", icFit, a.fitView, false},
+		{"zoomin", "Zoom in", "+", icZoomIn, func() { a.zoomAt(a.vp.CX(), a.vp.CY(), 0.8) }, false},
+		{"zoomout", "Zoom out", "-", icZoomOut, func() { a.zoomAt(a.vp.CX(), a.vp.CY(), 1.25) }, false},
+		{"ortho", orthoTip, "", orthoIcon, func() { a.setOrtho(!a.cam.Ortho) }, false},
+		{"orbitcenter", "Set the center of rotation", "", icOrbitCenter, func() { a.setMode(modeOrbitCenter) }, a.mode == modeOrbitCenter},
 	}
 	y := cr.Y + cr.H + 12
 	for _, bt := range btns {
 		r := render.Rect{X: a.vp.X + leftColX, Y: y, W: leftBtn, H: leftBtn}
 		hot := a.isHot(bt.id)
 		bg := colChrome
-		if hot {
+		switch {
+		case bt.active:
+			bg = colBlueLight
+		case hot:
 			bg = colHoverBG
 		}
 		b.Circle(r.CX(), r.CY(), leftBtn/2+1, colBorder)
 		b.Circle(r.CX(), r.CY(), leftBtn/2, bg)
 		c := colIcon
-		if hot {
+		if hot || bt.active {
 			c = colIconHover
 		}
 		drawIcon(b, bt.icon, r.Inset(9), c)

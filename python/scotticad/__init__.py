@@ -56,7 +56,7 @@ class Client:
         self._lock = threading.Lock()
         self.process: Optional[subprocess.Popen] = None
 
-    # -- transport ---------------------------------------------------------
+    # -- transport ----------------------------------------------------------
 
     def call(self, method: str, **params: Any) -> Any:
         """Invoke any API method by name (see :meth:`describe`)."""
@@ -110,7 +110,7 @@ class Client:
                 self.process.kill()
         self.close()
 
-    # -- design files --------------------------------------------------------
+    # -- design files ------------------------------------------------------
 
     def describe(self) -> list:
         """Every method with its parameters."""
@@ -145,7 +145,7 @@ class Client:
     def fonts(self) -> list:
         return self.call("fonts")
 
-    # -- creation --------------------------------------------------------------
+    # -- creation ----------------------------------------------------------
 
     def add_shape(self, kind: str, x: float = 0, y: float = 0, z: Optional[float] = None, hole: bool = False) -> int:
         """Place a shape with its bottom centre at (x, y, z); returns its id."""
@@ -178,7 +178,7 @@ class Client:
     def export(self, path: str, selection_only: bool = False) -> None:
         self.call("export", path=os.path.abspath(path), selection_only=selection_only)
 
-    # -- selection ---------------------------------------------------------------
+    # -- selection ---------------------------------------------------------
 
     def select(self, ids: Iterable[int]) -> list:
         return self.call("select", ids=list(ids))
@@ -196,7 +196,7 @@ class Client:
     def selection(self) -> dict:
         return self.call("get_selection")
 
-    # -- transforms ------------------------------------------------------------------
+    # -- transforms --------------------------------------------------------
 
     def move(self, dx: float = 0, dy: float = 0, dz: float = 0, ids: Optional[Sequence[int]] = None) -> None:
         self.call("move", dx=dx, dy=dy, dz=dz, ids=_ids(ids))
@@ -233,7 +233,7 @@ class Client:
     def nudge(self, axis: str, steps: float = 1) -> None:
         self.call("nudge", axis=axis, steps=steps)
 
-    # -- appearance ----------------------------------------------------------------------
+    # -- appearance --------------------------------------------------------
 
     def set_hole(self, hole: bool = True, ids: Optional[Sequence[int]] = None) -> None:
         self.call("set_hole", hole=hole, ids=_ids(ids))
@@ -269,7 +269,7 @@ class Client:
         own frame."""
         self.call("set_loft", id=id, sections=sections)
 
-    # -- visibility -------------------------------------------------------------------------
+    # -- visibility --------------------------------------------------------
 
     def hide(self, ids: Optional[Sequence[int]] = None) -> None:
         self.call("hide", ids=_ids(ids))
@@ -280,7 +280,7 @@ class Client:
     def show_all(self) -> None:
         self.call("show_all")
 
-    # -- grouping and clipboard ----------------------------------------------------------------
+    # -- grouping and clipboard --------------------------------------------
 
     def group(self, mode: str = "union", ids: Optional[Sequence[int]] = None) -> int:
         """mode: "union", "bundle" or "intersect". Returns the group id."""
@@ -322,7 +322,7 @@ class Client:
     def redo(self) -> bool:
         return self.call("redo")["done"]
 
-    # -- settings and tools ---------------------------------------------------------------------
+    # -- settings and tools ------------------------------------------------
 
     def set_units(self, units: str) -> None:
         """"mm" or "in"."""
@@ -388,20 +388,25 @@ class Client:
                          bottom_layers=bottom_layers, infill=infill, price_per_kg=price_per_kg, calibration=calibration)
 
     def set_section(self, on: bool = True, axis: Optional[str] = None, at: Optional[float] = None,
-                    keep: Optional[str] = None, pin: Optional[bool] = None) -> None:
+                    keep: Optional[str] = None, pin: Optional[bool] = None,
+                    ids: Optional[Sequence[int]] = None) -> Optional[dict]:
         """Section view: hide everything on one side of a plane square to an
         axis of the current plane ("x", "y" or "z"; default "y") at `at` mm
-        (default: the design's middle). keep: "above" or "below", the side that shows
-        (default: the side away from the camera). pin keeps it open when the
-        selection changes. The design is unchanged."""
-        self.call("set_section", on=on, axis=axis, at=at, keep=keep, pin=pin)
+        (default: the middle of what it cuts). keep: "above" or "below", the
+        side that shows (default: the side away from the camera). pin (default
+        True) keeps it open when the selection changes. ids: the shapes to
+        cut (default every shape). Each call aims it afresh; returns the view,
+        with crosses False if the plane misses the shapes. The design is
+        unchanged."""
+        r = self.call("set_section", on=on, axis=axis, at=at, keep=keep, pin=pin, ids=_ids(ids))
+        return r if on else None
 
     def set_tool(self, tool: str) -> None:
         """none, align, mirror, measure, visibility, ruler, notes,
-        construction_plane, split, layflat or cruise."""
+        construction_plane, split, layflat, orbit_center or cruise."""
         self.call("set_tool", tool=tool)
 
-    # -- camera and output ----------------------------------------------------------------------
+    # -- camera and output -------------------------------------------------
 
     def camera(self) -> dict:
         return self.call("get_camera")
@@ -448,7 +453,7 @@ class Client:
     def click_control(self, id: str) -> None:
         self.call("click_control", id=id)
 
-    # -- input simulation (window coordinates, logical pixels) ---------------------------------
+    # -- input simulation (window coordinates, logical pixels) -------------
 
     def mouse_move(self, x: float, y: float, mods: Sequence[str] = ()) -> None:
         self.call("mouse_move", x=x, y=y, mods=list(mods))
@@ -476,7 +481,7 @@ class Client:
     def type_text(self, text: str) -> None:
         self.call("type_text", text=text)
 
-    # -- scripting ----------------------------------------------------------------------------------
+    # -- scripting ---------------------------------------------------------
 
     def run_script(self, code: str, name: str = "<api>") -> dict:
         """Run a Starlark script in ScottiCAD, as its console's Editor tab does (one undo

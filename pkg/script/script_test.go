@@ -8,6 +8,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"go.starlark.net/starlark"
 )
 
 // fakeAPI records calls and answers a few methods like the real API.
@@ -188,6 +191,15 @@ func TestPromptShowsAHugeValueShort(t *testing.T) {
 	if len(res) != 3 || len(res[0].Text) > maxShown+100 || !strings.HasSuffix(res[0].Text, "(200000 characters)") ||
 		res[1].Text != "list of 20000 items" || res[2].Text != "[1, 2]" {
 		t.Fatalf("%.80q / %.80q / %q", res[0].Text, res[1].Text, res[2].Text)
+	}
+}
+
+// A long string is cut between characters, not inside one (which would
+// show as escaped bytes).
+func TestHugeStringIsCutOnACharacter(t *testing.T) {
+	s := shown(starlark.String("a" + strings.Repeat("é", maxShown)))
+	if strings.Contains(s, `\x`) || !utf8.ValidString(s) {
+		t.Errorf("%.40q…%q", s, s[len(s)-60:])
 	}
 }
 
