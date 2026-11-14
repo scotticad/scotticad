@@ -20,7 +20,9 @@ which are here too, and some made by hand in ScottiCAD's editor.
   ready to open with *File → Open* without running anything: to look at,
   edit by hand, or export for printing. There are two kinds:
   - designs **made by the scripts** in `star/`, each named after its
-    script (`coasters.star` makes `coasters.scotticad`);
+    script (`coasters.star` makes `coasters.scotticad`), or, for a script
+    that makes several versions of a design, after the version
+    (`vault-case.star` makes `vault-case-pi4.scotticad` and others);
   - **original designs** made by hand in the editor, with no script
     (`washer.scotticad`, for one). These are examples of building with
     the mouse rather than with code.
@@ -90,6 +92,27 @@ itself.
   filament spool holder: two A-frame uprights, braces, cone hubs on 608
   bearings, and a printed M8 axle and nut made with the ISO Thread shape.
   Every part is laid out flat on the build plate.
+
+### Raspberry Pi cases
+
+- **[`raspberrypi/vault-case.star`](star/raspberrypi/vault-case.star)**:
+  a two-colour Raspberry Pi case themed after Vault-Tec from the Fallout
+  games, in blue and yellow: a cog badge inlaid in the lid with vents
+  between its teeth, a riveted nameplate with latches on the back, and
+  ribbed corners. One script makes it for three boards, chosen with
+  `BOARD`:
+  [`vault-case-pi5`](scotticad/raspberrypi/vault-case-pi5.scotticad)
+  (with slots over the Active Cooler's fan and gills by its fins),
+  [`vault-case-pi4`](scotticad/raspberrypi/vault-case-pi4.scotticad) and
+  [`vault-case-zero2w`](scotticad/raspberrypi/vault-case-zero2w.scotticad)
+  (whose case is too small for lettering that prints, so its lid has a
+  bigger emblem instead). The ports are notches in the bottom edge of the
+  shell, so it drops straight down over the board, and four M2.5 × 10 mm
+  screws go up through the base and the board into posts in the shell.
+  It prints without supports, the shell upside down. The designs here
+  show the case closed, with an outline of the board that isn't printed;
+  set `ASSEMBLED = False` for the parts laid out to print, or
+  `INLAY = False` for one colour.
 
 ### Print-in-place mechanisms
 
