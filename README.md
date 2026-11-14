@@ -128,18 +128,21 @@ protractor, and line things up with the align tool.
   and look inside with **section view**
 - A **filament estimate** in grams, metres and cost, from your slicer
   settings
+- A **print check** that flags holes in a part's surface (and marks
+  them in the view), parts floating above, sunk into or off the plate,
+  and pieces in mid-air, and measures the overhangs that may need support
 - **Build plate presets** for popular printers
 
 ### A shape library
 Basic shapes (box, cylinder, sphere, cone, pyramid, roof, wedge, trapezoid,
-tapered box, tube, ring, torus, polygon, star, heart and more), text in
-several fonts, and ready-made parametric parts:
+tapered box, tube, ring, torus, polygon, star, heart, slot, arc, fillet,
+teardrop and more), text in several fonts, and ready-made parametric parts:
 
 | | |
 |---|---|
-| **Hardware & enclosures** | project box with lid, extruded box with end panels, PCB standoff, rounded plate, vent grille, hex nut and bolt, nut trap, countersunk and counterbored holes |
-| **Mechanical** | involute spur, helical and herringbone gears, ring gear, gear rack, print-in-place planetary gear set, spring, pipe elbow, knurled knob, print-in-place hinge |
-| **Parametric** | ISO metric thread, round-tooth gear, hyperboloid, spherical shell, square, diamond and honeycomb grids, diamond mesh, tube joint, fluted rod, puffy box |
+| **Hardware & enclosures** | project box with lid, extruded box with end panels, PCB standoff, rounded plate, vent grille, hex nut and bolt, nut trap, countersunk and counterbored holes, keyhole slot, bearing seat |
+| **Mechanical** | involute spur, helical and herringbone gears, ring gear, bevel gears, gear rack, print-in-place planetary gear set, GT2 pulley, spring, pipe elbow, bent tube, knurled knob, print-in-place hinge, dovetail and pin joints |
+| **Parametric** | ISO metric thread, round-tooth gear, hyperboloid, spherical shell, square, diamond and honeycomb grids, diamond mesh, tube joint, fluted rod, puffy box, QR code |
 | **Computers & networking** | laptop, monitor, keyboard, server, equipment rack, router, switch, 3D printer and more |
 
 Every part's controls (pitch, teeth, wall thickness…) stay editable after
@@ -170,6 +173,9 @@ Apache-2.0 licensed. Use it for anything, including commercial work.
 4. **Size and place**: drag the handles, or click any dimension and type a number.
 5. **Export**: *File → Export…* and choose STL for your slicer, or 3MF to
    keep the colours (a part per colour).
+
+The **[user manual](docs/manual/README.md)** starts with a ten-minute
+tutorial and covers every tool, with pictures.
 
 Press **?** in the program for the full list of keyboard shortcuts. A few
 favourites:
@@ -211,9 +217,9 @@ work as in Python; there are no classes, `try`/`except` or `import`. The
 code moves easily between the two. Type `help()` for the list.
 
 The [`examples`](examples) folder has over a dozen commented scripts (cable
-clips, knobs, a plant pot, a filament spool holder and more) and
-ready-to-open designs: the ones the scripts make, and some made by hand
-in the editor.
+clips, knobs, a plant pot, a filament spool holder, a Raspberry Pi case
+and more) and ready-to-open designs: the ones the scripts make, and one
+made by hand in the editor.
 
 - `print` output, results and errors appear in the console; click an
   error to jump to its line in the script.
@@ -252,6 +258,28 @@ vase = cad.add_loft([(0, ring(20, 6)), (40, ring(28, 48)), (80, ring(12, 48)), (
 
 Designs with outlines or lofts are saved in file format 2, which earlier
 ScottiCAD versions won't open (rather than lose the shapes).
+
+### Bent tubes
+
+A **Bent Tube** (in the Mechanical library) is a round tube made the way a
+tube bender makes one, from a **bend table** in its Properties: each row is
+a straight length, then a bend through an angle (negative bends the other
+way), its plane first **turned** about the tube, so a tube can leave the
+plane it started in. Numbered markers on the selected tube show which row
+is which; click one to pick its row. The outer diameter, the wall (0 is
+solid), the bend radius and the number of sides are ordinary sliders. A
+script sets the table with `cad.set_bends`:
+
+```python
+rail = cad.add_shape("benttube")
+cad.set_param(rail, "diameter", 4.6)
+cad.set_bends(rail, [(40, 90), (30, -45, 0), (25, 90, 90), (20,)])   # (length, angle, turn)
+print(cad.node(rail)["tube"])   # where it starts and ends, and which way
+```
+
+The tube starts where it was and keeps its start when the table, the
+diameter or the bend radius changes, so tubes joined end to end stay
+joined. Designs with bent tubes are saved in file format 3.
 
 ---
 
@@ -302,8 +330,8 @@ For Claude Code, with the full path to `scotticad.exe` (Windows) or
 claude mcp add scotticad -- C:\Tools\ScottiCAD\scotticad.exe --mcp
 ```
 
-That starts a ScottiCAD window when the assistant needs one. To work
-with a ScottiCAD you've already opened instead, start it with
+ScottiCAD then opens in its own window whenever Claude Code starts a
+session. To work with a ScottiCAD you've already opened instead, start it with
 `scotticad --api 127.0.0.1:47800` and use
 `scotticad --mcp-connect 127.0.0.1:47800`.
 [docs/mcp.md](docs/mcp.md) covers both, other assistants, and how to limit

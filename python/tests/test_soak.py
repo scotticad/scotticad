@@ -7,8 +7,9 @@ Optional: it takes minutes, so it runs only with SCOTTICAD_SOAK=1:
 
     SCOTTICAD_SOAK=1 python -m pytest python/tests/test_soak.py -s
 
-SCOTTICAD_SOAK_STEPS (default 2000) and SCOTTICAD_SOAK_SEED (default 1)
-set its length and its session."""
+SCOTTICAD_SOAK_STEPS (default 6000: long enough for the mesh cache to fill,
+about five minutes) and SCOTTICAD_SOAK_SEED (default 1) set its length and
+its session."""
 import ctypes
 import ctypes.wintypes
 import json
@@ -22,9 +23,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from scotticad import launch  # noqa: E402
 from test_torture import Session  # noqa: E402
 
-pytestmark = pytest.mark.skipif(not os.environ.get("SCOTTICAD_SOAK"), reason="set SCOTTICAD_SOAK=1 to run the soak test")
+pytestmark = [
+    pytest.mark.skipif(not os.environ.get("SCOTTICAD_SOAK"), reason="set SCOTTICAD_SOAK=1 to run the soak test"),
+    pytest.mark.skipif(sys.platform != "win32", reason="reads the working set through the Windows API"),
+]
 
-STEPS = int(os.environ.get("SCOTTICAD_SOAK_STEPS", "2000"))
+STEPS = int(os.environ.get("SCOTTICAD_SOAK_STEPS", "6000"))
 SEED = int(os.environ.get("SCOTTICAD_SOAK_SEED", "1"))
 
 
@@ -79,17 +83,26 @@ def test_long_session_stays_bounded(tmp_path):
                 t0 = time.time()
         assert len(json.dumps(cad.get_document())) < 50 * 2**20, "the design itself grew huge: the memory figures mean nothing"
         assert len(samples) >= 8, "too few samples to judge growth"
-        # after the first quarter (the warm-up: caches filling, the history
-        # reaching its depth) nothing may keep climbing
-        warm = samples[len(samples) // 4]
+        # after the warm-up (caches filling, the history reaching its depth)
+        # nothing may keep climbing. It lasts at least the first quarter,
+        # and until the mesh cache, the largest of them, has nearly all it
+        # will hold: while that still fills, memory grows as it should
+        full = 0.9 * max(x[5] for x in samples)
+        first = next(i for i, x in enumerate(samples) if x[5] >= full)
+        first = max(first, len(samples) // 4)
+        assert len(samples) - first >= 5, (
+            f"the mesh cache was still filling at step {samples[first][0]} of {STEPS} ({samples[-1][5]} triangles): "
+            "too little of the run is left to judge growth; run it longer (SCOTTICAD_SOAK_STEPS)")
+        warm = samples[first]
         last = samples[-1]
-        peak = max(x[1] for x in samples[len(samples) // 4:])
+        peak = max(x[1] for x in samples[first:])
         assert last[1] < 1.5 * warm[1] + 100, f"working set grew from {warm[1]:.0f} MB to {last[1]:.0f} MB"
         assert peak < 1.5 * warm[1] + 150, f"working set peaked at {peak:.0f} MB after {warm[1]:.0f} MB warm"
         assert last[2] < 1.5 * warm[2] + 100, f"heap grew from {warm[2]:.0f} MB to {last[2]:.0f} MB"
         assert last[3] < warm[3] + 20, f"goroutines grew from {warm[3]} to {last[3]}"
         assert last[5] <= 3_000_000 and last[6] <= 200_000, "a cache passed its limit"
         # and a step takes no longer than it did (the program isn't bogging down)
-        early = sorted(x[7] for x in samples[1:len(samples) // 2])
-        late = sorted(x[7] for x in samples[len(samples) // 2:])
+        half = (first + len(samples)) // 2
+        early = sorted(x[7] for x in samples[first:half])
+        late = sorted(x[7] for x in samples[half:])
         assert late[len(late) // 2] < 2 * early[len(early) // 2] + 0.05, f"steps slowed from {early[len(early) // 2]:.3f} s to {late[len(late) // 2]:.3f} s"

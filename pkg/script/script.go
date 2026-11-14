@@ -685,7 +685,7 @@ func (s *Session) help(th *starlark.Thread, b *starlark.Builtin, args starlark.T
 		}
 		say("  cad.call(method, **params)  any API method by name; cad.describe() lists them")
 		say("")
-		say("Lengths are millimetres, angles degrees. \"The current plane\" is the")
+		say("Lengths are millimeters, angles degrees. \"The current plane\" is the")
 		say("construction plane, if one is placed, otherwise the build plate.")
 		say("")
 		say("help(cad.add_shape) describes one method.")

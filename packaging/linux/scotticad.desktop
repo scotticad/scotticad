@@ -2,7 +2,7 @@
 Type=Application
 Name=ScottiCAD
 GenericName=3D Modeler
-Comment=3D modelling for makers, on your own computer
+Comment=3D modeling for makers, on your own computer
 Exec=scotticad %f
 Icon=scotticad
 Terminal=false

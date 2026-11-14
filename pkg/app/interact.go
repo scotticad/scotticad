@@ -21,7 +21,6 @@ const (
 	dragLift
 	dragRotate
 	dragMarquee
-	dragTile
 	dragCube
 )
 
@@ -543,8 +542,6 @@ func (a *App) dragMove(x, y float64, m window.Mods) {
 			a.orbit(dx*1.6, dy*1.6)
 		}
 	case dragMarquee:
-	case dragTile:
-		a.updatePlace(x, y)
 	case dragMove:
 		if !d.moved {
 			return
@@ -757,13 +754,6 @@ func (a *App) dragEnd(x, y float64, m window.Mods) {
 			return
 		}
 		a.marqueeSelect(d, m&window.Shift != 0)
-	case dragTile:
-		if a.vp.Contains(x, y) && a.hot != "panel-area" {
-			a.updatePlace(x, y)
-			a.commitPlace()
-		} else {
-			a.place = nil
-		}
 	case dragMove:
 		if d.orig == nil {
 			// a click: shift toggles an already-selected shape off
@@ -887,9 +877,6 @@ func (a *App) dragCancel() {
 	if d.dup { // cancelling an Alt-drag takes its duplicates away too
 		a.ed.Undo()
 		a.ed.Hist.DropRedo()
-	}
-	if d.kind == dragTile {
-		a.place = nil
 	}
 }
 

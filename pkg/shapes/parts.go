@@ -65,16 +65,27 @@ func partKey(id string, v Values) string {
 	for _, k := range keys {
 		fmt.Fprintf(&sb, "|%s=%g", k, v.Num[k])
 	}
+	if v.Text != "" { // a part made from text (a QR code)
+		fmt.Fprintf(&sb, "|text=%q", v.Text)
+	}
 	return sb.String()
 }
 
 func registerPart(list *[]string, id, label, color string, params []Param, model func(Values) *geom.Mesh) {
+	registerGenerated(id, label, color, params, model)
+	*list = append(*list, id)
+}
+
+// registerGenerated registers a shape built in millimetres from its settings
+// (its natural size), which the shape's size then scales: changing a
+// setting keeps the shape's scale. It returns the kind for more setup.
+func registerGenerated(id, label, color string, params []Param, model func(Values) *geom.Mesh) *Kind {
 	k := &Kind{ID: id, Label: label, Color: color, Params: params}
 	k.build = func(s geom.Vec3, v Values) *geom.Mesh { return cachedPart(id, v, model).FitTo(s) }
 	k.natural = func(v Values) geom.Vec3 { return cachedPart(id, v, model).Bounds().Size() }
 	k.Size = k.natural(k.Defaults())
 	register(k)
-	*list = append(*list, id)
+	return k
 }
 
 // --- 2D helpers ----------------------------------------------------------------------
@@ -343,6 +354,9 @@ func pipeElbowModel(v Values) *geom.Mesh {
 	const ns, nc = 48, 32
 	full := ang >= 2*math.Pi-1e-9
 	pt := func(i, j int, r float64) geom.Vec3 {
+		if full {
+			i %= ns // a full turn ends on its first ring exactly, not a rounding error off it
+		}
 		a := ang * float64(i) / ns
 		b := 2 * math.Pi * float64(j%nc) / nc
 		rr := R + r*math.Cos(b)

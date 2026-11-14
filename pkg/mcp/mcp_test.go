@@ -343,7 +343,7 @@ func TestScriptAPIResource(t *testing.T) {
 	s.init("2025-06-18")
 	r := s.ask(1, "resources/read", map[string]any{"uri": "scotticad://script-api"})
 	md := r["contents"].([]any)[0].(map[string]any)["text"].(string)
-	if !strings.Contains(md, "`cad.add_shape(kind, x=0)`: Place a catalogue shape") {
+	if !strings.Contains(md, "`cad.add_shape(kind, x=0)`: Place a catalog shape") {
 		t.Errorf("the reference: %s", md)
 	}
 }

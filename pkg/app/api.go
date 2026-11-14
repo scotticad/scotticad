@@ -206,6 +206,59 @@ func sectionsArg(v any) ([]shapes.Section, error) {
 	return out, nil
 }
 
+// bendsArg reads a bent tube's bend table: [[length, angle, turn], ...]
+// (turn may be left out) or [{"length": l, "angle": a, "turn": t}, ...].
+func bendsArg(v any) ([]shapes.Bend, error) {
+	list, ok := v.([]any)
+	if !ok {
+		return nil, errors.New("bends must be a list of [length, angle, turn]")
+	}
+	num := func(x any, row int, what string) (float64, error) {
+		if x == nil {
+			return 0, nil
+		}
+		f, ok := x.(float64)
+		if !ok {
+			return 0, fmt.Errorf("row %d: %s must be a number", row, what)
+		}
+		return f, nil
+	}
+	var out []shapes.Bend
+	for i, r := range list {
+		var l, an, t any
+		switch r := r.(type) {
+		case []any:
+			if len(r) < 1 || len(r) > 3 {
+				return nil, fmt.Errorf("row %d must be [length, angle, turn]", i+1)
+			}
+			l = r[0]
+			if len(r) > 1 {
+				an = r[1]
+			}
+			if len(r) > 2 {
+				t = r[2]
+			}
+		case map[string]any:
+			l, an, t = r["length"], r["angle"], r["turn"]
+		default:
+			return nil, fmt.Errorf("row %d must be [length, angle, turn]", i+1)
+		}
+		var b shapes.Bend
+		var err error
+		if b.Length, err = num(l, i+1, "length"); err != nil {
+			return nil, err
+		}
+		if b.Angle, err = num(an, i+1, "angle"); err != nil {
+			return nil, err
+		}
+		if b.Turn, err = num(t, i+1, "turn"); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, nil
+}
+
 // outlineSections makes an outline's bottom and top sections.
 func outlineSections(cs [][][2]float64, z0, z1 float64) []shapes.Section {
 	return []shapes.Section{{Z: z0, Contours: cs}, {Z: z1, Contours: cs}}
@@ -289,9 +342,21 @@ func nodeJSON(n *doc.Node, deep bool, top bool) map[string]any {
 	}
 	if n.Kind == "text" {
 		m["text"], m["font"] = n.Text, n.Font
+	} else if n.Text != "" { // a QR code
+		m["text"] = n.Text
 	}
 	if len(n.Sections) > 0 {
 		m["sections"] = n.Sections
+	}
+	if len(n.Bends) > 0 {
+		m["bends"] = n.Bends
+		// where the tube starts and ends, and which way, in its parent's
+		// coordinates (the design's, for a top-level shape): what joining
+		// tubes end to end needs
+		if s, e, ok := n.TubeEnds(); ok {
+			v := func(p geom.Vec3) []float64 { return []float64{p.X, p.Y, p.Z} }
+			m["tube"] = map[string]any{"start": v(s[0]), "start_dir": v(s[1]), "end": v(e[0]), "end_dir": v(e[1])}
+		}
 	}
 	if top {
 		m["bounds"] = boundsJSON(n.WorldBounds())
@@ -305,6 +370,14 @@ func nodeJSON(n *doc.Node, deep bool, top bool) map[string]any {
 		m["children"] = cs
 	}
 	return m
+}
+
+// idList is ids for a reply: an empty list, not null, when there are none.
+func idList(ids []int) []int {
+	if ids == nil {
+		return []int{}
+	}
+	return ids
 }
 
 func (a *App) nodesArg(p args) []int {
@@ -371,7 +444,7 @@ func init() {
 		{Name: "get_state", Doc: "Design and editor state summary.", fn: func(a *App, p args) (any, error) {
 			s := a.ed.Doc.Settings
 			st := map[string]any{"name": a.designName(), "path": a.ed.Path, "dirty": a.ed.Dirty(), "settings": s,
-				"selection": a.ed.Sel, "can_undo": a.ed.Hist.CanUndo(), "can_redo": a.ed.Hist.CanRedo(),
+				"selection": idList(a.ed.Sel), "can_undo": a.ed.Hist.CanUndo(), "can_redo": a.ed.Hist.CanRedo(),
 				"undo_depth": a.ed.Hist.Depth(), "node_count": len(a.ed.Doc.Nodes), "selection_bounds": boundsJSON(a.ed.SelectionBounds())}
 			if a.ed.Ruler != nil {
 				st["ruler"] = a.ed.Ruler
@@ -402,13 +475,17 @@ func init() {
 			}
 			return nil, fmt.Errorf("no node %d", id)
 		}},
-		{Name: "shape_kinds", Doc: "The shape catalogue with parameters.", fn: func(a *App, p args) (any, error) {
+		{Name: "shape_kinds", Doc: "The shape catalog with parameters.", fn: func(a *App, p args) (any, error) {
 			var out []any
 			for _, k := range shapes.All() {
-				var ps []any
+				ps := []any{} // a shape with no settings: an empty list, not null
 				for _, pr := range k.Params {
-					ps = append(ps, map[string]any{"key": pr.Key, "label": pr.Label, "kind": []string{"slider", "number", "text", "font"}[pr.Kind],
-						"min": pr.Min, "max": pr.Max, "step": pr.Step, "default": pr.Default, "int": pr.Int, "length": pr.Length, "metric": pr.Metric})
+					p := map[string]any{"key": pr.Key, "label": pr.Label, "kind": []string{"slider", "number", "text", "font", "choice"}[pr.Kind],
+						"min": pr.Min, "max": pr.Max, "step": pr.Step, "default": pr.Default, "int": pr.Int, "length": pr.Length, "metric": pr.Metric}
+					if pr.Kind == shapes.Choice {
+						p["options"] = pr.Options // the value is an option's index
+					}
+					ps = append(ps, p)
 				}
 				out = append(out, map[string]any{"id": k.ID, "label": k.Label, "color": k.Color, "size": []float64{k.Size.X, k.Size.Y, k.Size.Z}, "params": ps})
 			}
@@ -418,7 +495,7 @@ func init() {
 		{Name: "fonts", Doc: "Font names usable by text shapes.", fn: func(a *App, p args) (any, error) { return shapes.FontNames(), nil }},
 
 		// --- creation
-		{Name: "add_shape", Doc: "Place a catalogue shape with its bottom centre at (x, y, z); selects it.",
+		{Name: "add_shape", Doc: "Place a catalog shape with its bottom center at (x, y, z); selects it.",
 			Params: []apiParam{req("kind", "string", "shape id, see shape_kinds"), opt("x", "float", "mm"), opt("y", "float", "mm"), opt("z", "float", "mm; default: on the current plane"), opt("hole", "bool", "")},
 			fn: func(a *App, p args) (any, error) {
 				z := p.f("z", a.ed.PlaneZ())
@@ -474,6 +551,15 @@ func init() {
 					return nil, err
 				}
 				return ok2(a.ed.SetSections(n.ID, ss))
+			}},
+		{Name: "set_bends", Doc: "Replace a bent tube's bend table: each row a straight length (mm), then a bend (degrees, negative the other way) whose plane is first turned about the tube (degrees). The tube's start stays where it was.",
+			Params: []apiParam{req("id", "int", "node id (any depth)"), req("bends", "[length, angle, turn][]", "[[length, angle, turn], ...] (turn may be left out), or [{length, angle, turn}, ...]")},
+			fn: func(a *App, p args) (any, error) {
+				bs, err := bendsArg(p["bends"])
+				if err != nil {
+					return nil, err
+				}
+				return ok2(a.ed.SetBends(p.i("id", 0), bs))
 			}},
 		// --- notes
 		{Name: "add_note", Doc: "Pin a note to top-level shape id at the world point (x, y, z); returns its index on that shape.",
@@ -532,7 +618,7 @@ func init() {
 		{Name: "select_all", Doc: "Select every visible shape.", fn: func(a *App, p args) (any, error) { a.ed.SelectAll(); return a.ed.Sel, nil }},
 		{Name: "clear_selection", Doc: "Deselect everything.", fn: func(a *App, p args) (any, error) { a.ed.ClearSelection(); return ok() }},
 		{Name: "get_selection", Doc: "Selected ids and their combined bounds.", fn: func(a *App, p args) (any, error) {
-			return map[string]any{"ids": a.ed.Sel, "bounds": boundsJSON(a.ed.SelectionBounds())}, nil
+			return map[string]any{"ids": idList(a.ed.Sel), "bounds": boundsJSON(a.ed.SelectionBounds())}, nil
 		}},
 
 		// --- transforms
@@ -565,7 +651,7 @@ func init() {
 				a.ed.Move(doc.IDs(ns), d)
 				return ok()
 			}},
-		{Name: "set_size", Doc: "Resize the bounding box (mm); omitted axes keep their size. X/Y stay centred, Z keeps the base.",
+		{Name: "set_size", Doc: "Resize the bounding box (mm); omitted axes keep their size. X/Y stay centered, Z keeps the base.",
 			Params: []apiParam{opt("x", "float", ""), opt("y", "float", ""), opt("z", "float", ""), opt("uniform", "bool", "scale all axes by the one given"), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				ns := a.targetNodes(p)
@@ -610,7 +696,7 @@ func init() {
 				}
 				return ok2(a.ed.SetBounds(a.nodesArg(p), geom.Box{Min: mn, Max: mx}))
 			}},
-		{Name: "rotate", Doc: "Rotate about a world axis through the selection centre.", Params: []apiParam{req("axis", "axis", "x, y or z"), req("degrees", "float", "positive = counter-clockwise looking down the axis"), idsParam},
+		{Name: "rotate", Doc: "Rotate about a world axis through the selection center. The editor's rotation handles show the opposite sign: a turn counter-clockwise seen from above, +90 here, reads as -90° on the protractor.", Params: []apiParam{req("axis", "axis", "x, y or z"), req("degrees", "float", "positive = counter-clockwise seen from the axis's positive end (for z, from above)"), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				ax, err := axisArg(p, "axis")
 				if err != nil {
@@ -619,7 +705,7 @@ func init() {
 				a.ed.Rotate(a.nodesArg(p), ax, p.f("degrees", 0))
 				return ok()
 			}},
-		{Name: "mirror", Doc: "Mirror the selection about its centre.", Params: []apiParam{req("axis", "axis", "x, y or z"), idsParam},
+		{Name: "mirror", Doc: "Mirror the selection about its center.", Params: []apiParam{req("axis", "axis", "x, y or z"), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				ax, err := axisArg(p, "axis")
 				if err != nil {
@@ -665,7 +751,7 @@ func init() {
 				})
 				return ok()
 			}},
-		{Name: "set_color", Doc: "Set colour (#rrggbb); makes the shapes solid.", Params: []apiParam{req("color", "string", "#rrggbb"), idsParam},
+		{Name: "set_color", Doc: "Set color (#rrggbb); makes the shapes solid.", Params: []apiParam{req("color", "string", "#rrggbb"), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				var err error
 				a.withSel(p, func() { err = a.ed.SetColor(p.s("color", "")) })
@@ -675,7 +761,7 @@ func init() {
 			a.withSel(p, func() { a.ed.SetTransparent(p.b("on", true)) })
 			return ok()
 		}},
-		{Name: "set_multicolor", Doc: "Union groups: keep each child's colour.", Params: []apiParam{req("on", "bool", ""), idsParam}, fn: func(a *App, p args) (any, error) {
+		{Name: "set_multicolor", Doc: "Union groups: keep each child's color.", Params: []apiParam{req("on", "bool", ""), idsParam}, fn: func(a *App, p args) (any, error) {
 			a.withSel(p, func() { a.ed.SetMulticolor(p.b("on", true)) })
 			return ok()
 		}},
@@ -687,11 +773,11 @@ func init() {
 			a.withSel(p, func() { a.ed.SetName(p.s("name", "")) })
 			return ok()
 		}},
-		{Name: "set_param", Doc: "Set a shape parameter (see shape_kinds).", Params: []apiParam{req("id", "int", "node id (any depth)"), req("key", "string", ""), req("value", "float", "")},
+		{Name: "set_param", Doc: "Set a shape parameter (see shape_kinds). A choice (a dropdown, such as a bearing seat's bearing) is set by its option's index in shape_kinds' options.", Params: []apiParam{req("id", "int", "node id (any depth)"), req("key", "string", ""), req("value", "float", "")},
 			fn: func(a *App, p args) (any, error) {
 				return ok2(a.ed.SetParam(p.i("id", 0), p.s("key", ""), p.f("value", 0)))
 			}},
-		{Name: "set_text", Doc: "Change a text shape's string and/or font.", Params: []apiParam{req("id", "int", ""), req("text", "string", ""), opt("font", "string", "")},
+		{Name: "set_text", Doc: "Change a text shape's string and/or font, or a QR code's text.", Params: []apiParam{req("id", "int", ""), req("text", "string", ""), opt("font", "string", "")},
 			fn: func(a *App, p args) (any, error) {
 				return ok2(a.ed.SetText(p.i("id", 0), p.s("text", ""), p.s("font", "")))
 			}},
@@ -708,7 +794,7 @@ func init() {
 		{Name: "show_all", Doc: "Show all hidden shapes (Ctrl+Shift+H).", fn: func(a *App, p args) (any, error) { a.ed.ShowAll(); return ok() }},
 
 		// --- grouping
-		{Name: "group", Doc: "Group the selection; returns the new group id.", Params: []apiParam{opt("mode", "string", `"union" (default) or "bundle"`), idsParam},
+		{Name: "group", Doc: "Group the selection; returns the new group id.", Params: []apiParam{opt("mode", "string", `"union" (default), "bundle" or "intersect"`), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				if ids := a.nodesArg(p); ids != nil {
 					a.ed.Select(ids...)
@@ -734,7 +820,7 @@ func init() {
 			}},
 		// --- split, lay flat and section view
 		{Name: "split", Doc: "Split shapes with a plane square to an axis of the current plane; each becomes two halves (groups of the shape and a hole box). Returns the halves' ids.",
-			Params: []apiParam{req("axis", "axis", "x, y or z (the current plane's)"), opt("at", "float", "where along the axis, mm; default: the selection's centre"),
+			Params: []apiParam{req("axis", "axis", "x, y or z (the current plane's)"), opt("at", "float", "where along the axis, mm; default: the selection's center"),
 				opt("keep", "string", "both, above or below (the + or - side of the axis)"), opt("gap", "float", "mm to move the half above (+ side) away; the one below stays"), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				ax, err := axisArg(p, "axis")
@@ -811,10 +897,15 @@ func init() {
 				return a.sectionJSON(), nil
 			}},
 		// --- filament
-		{Name: "filament_estimate", Doc: "Estimate the filament the selection (or ids, or the whole design) takes: grams, metres, cost, and per colour. Supports, brims and purge aren't included.",
+		{Name: "filament_estimate", Doc: "Estimate the filament the selection (or ids, or the whole design) takes: grams, meters, cost, and per color. Supports, brims and purge aren't included.",
 			Params: []apiParam{idsParam},
 			fn: func(a *App, p args) (any, error) {
 				return filamentJSON(a.estimateFilament(a.filamentNodes(a.nodesArg(p))), a.fil.settings), nil
+			}},
+		{Name: "print_check", Doc: "Check that the selection (or ids, or the whole design) will reach the slicer as clean solids on the plate: holes or cracks in the surface (as exported), faces inside out, parts floating, sunk into or off the plate, pieces in mid-air. Per part: status (ok, note or warning); findings, each with a message (lengths in the design's units) and what to do (notes need nothing done), and its numbers in mm (gap, height); and overhang_area, the mm² of faces leaning out more than 45° from upright, facing down and resting on nothing, which may need support (information, never a finding).",
+			Params: []apiParam{idsParam},
+			fn: func(a *App, p args) (any, error) {
+				return printCheckJSON(a.printCheck(a.filamentNodes(a.nodesArg(p)), false)), nil
 			}},
 		{Name: "set_filament_settings", Doc: "Change the filament estimate's settings (omitted ones are kept); returns them. material: a preset (PLA, PETG, ABS, ASA, TPU, PC, Nylon) sets its density.",
 			Params: []apiParam{opt("material", "string", ""), opt("density", "float", "g/cm³"), opt("diameter", "float", "mm"), opt("layer_height", "float", "mm"),
@@ -958,7 +1049,7 @@ func init() {
 				x, y, okk := a.project(geom.V(p.f("x", 0), p.f("y", 0), p.f("z", 0)))
 				return map[string]any{"x": x, "y": y, "visible": okk && a.vp.Contains(x, y)}, nil
 			}},
-		{Name: "get_ui_state", Doc: "Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; the center of rotation's marker (where it is drawn, and its setting); in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.", fn: func(a *App, p args) (any, error) {
+		{Name: "get_ui_state", Doc: "Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; the filament panel's print check lines (while it is open), and how many problem edges a click on one marked in the view (marked_edges, while they're shown); in the Export dialog, how many print check warnings what it would export has (export_warnings; -1 while checking); the center of rotation's marker (where it is drawn, and its setting); in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.", fn: func(a *App, p args) (any, error) {
 			a.layout() // asked before the first frame, the window would be 0 × 0
 			mode := modeNames[a.mode]
 			pop := popupNames[a.popup]
@@ -974,6 +1065,19 @@ func init() {
 			}
 			if a.section.on {
 				st["section"] = a.sectionJSON()
+			}
+			if a.fil.shown {
+				lines := []string{}
+				for _, l := range checkLines(a.printCheckNow(), a.ed.Doc.Settings.Units) {
+					lines = append(lines, l.text)
+				}
+				st["print_check"] = lines
+			}
+			if a.popup == popExport {
+				st["export_warnings"] = a.exportWarnings()
+			}
+			if es := a.markedNow(); len(es) > 0 {
+				st["marked_edges"] = len(es)
 			}
 			if a.field != nil {
 				st["field"] = map[string]any{"id": a.field.id, "text": a.field.text}

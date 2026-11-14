@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -122,8 +123,8 @@ func TestProfileFilesNeedVersion2(t *testing.T) {
 		t.Errorf("outline volume %v want 200", v)
 	}
 	// a newer format is refused, not half read
-	if _, err := Unmarshal([]byte(`{"version": 3, "nodes": []}`)); err == nil {
-		t.Error("version 3 should be refused")
+	if _, err := Unmarshal([]byte(fmt.Sprintf(`{"version": %d, "nodes": []}`, FormatVersion+1))); err == nil {
+		t.Errorf("version %d should be refused", FormatVersion+1)
 	}
 }
 

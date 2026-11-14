@@ -204,7 +204,7 @@ func (a *App) drawStart() {
 	drawLogo(b, render.Rect{X: lx, Y: r.Y + 44, W: 88, H: 88})
 	b.Text("ScottiCAD", lx, r.Y+148, fontUI+17, true, colText)
 	b.Text("Version "+scotticad.Version(), lx, r.Y+194, fontUI, false, colTextDim)
-	b.Text("3D modelling for makers", lx, r.Y+216, fontUI, false, colTextDim)
+	b.Text("3D modeling for makers", lx, r.Y+216, fontUI, false, colTextDim)
 	a.primaryButton("start-new", render.Rect{X: lx, Y: r.Y + r.H - 128, W: 200, H: 36}, "New design", func() {
 		if a.saveChanges() {
 			a.closePopup()

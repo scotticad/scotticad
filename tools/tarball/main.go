@@ -63,12 +63,18 @@ func read(files, execs []string) ([]entry, error) {
 		isExec[strings.TrimSpace(e)] = true
 	}
 	var entries []entry
+	seen := map[string]string{}
 	for _, p := range files {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			return nil, err
 		}
 		e := entry{name: filepath.Base(p), mode: 0o644, data: data}
+		// files are stored by base name: two of the same name would collide
+		if prev, ok := seen[e.name]; ok {
+			return nil, fmt.Errorf("%s and %s would both be stored as %s", prev, p, e.name)
+		}
+		seen[e.name] = p
 		if isExec[e.name] {
 			e.mode = 0o755
 		}

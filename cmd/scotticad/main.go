@@ -113,7 +113,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(flag.CommandLine.Output(), `ScottiCAD %s, a 3D modeller for 3D printing
+	fmt.Fprintf(flag.CommandLine.Output(), `ScottiCAD %s, a 3D modeler for 3D printing
 
 Usage:
   scotticad [options] [design.scotticad]

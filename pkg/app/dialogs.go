@@ -113,7 +113,7 @@ func (a *App) drawPopups() {
 		ns := ed.Selected()
 		if len(ns) != 1 {
 			a.popup = popNone
-			return
+			break
 		}
 		n := ns[0]
 		var items []menuItem
@@ -178,10 +178,14 @@ func (a *App) drawPopups() {
 	case popStart:
 		a.drawStart()
 	}
-	// an open dropdown's list goes over everything else in the dialog
+	// an open dropdown's list goes over everything else in the dialog. A
+	// list whose dropdown wasn't drawn this frame (its shape deselected, the
+	// inspector folded) closes, rather than pop open when it is next drawn
 	if f := a.dropList; f != nil {
 		a.dropList = nil
 		f()
+	} else {
+		a.openDrop = ""
 	}
 }
 
@@ -525,9 +529,10 @@ func (a *App) drawImport() {
 
 func (a *App) drawExport() {
 	b := a.batch
-	r := a.modal(520, 450, "")
+	r := a.modal(520, 478, "")
 	x := r.X + 24
 	b.Text("Export", x, r.Y+18+(30-b.LineHeight(fontUI+1, true))/2, fontUI+1, true, colText)
+	a.drawExportWarnings(x, r.Y+r.H-34)
 	b.Fill(render.Rect{X: r.X, Y: r.Y + 50, W: r.W, H: 1}, colBorder)
 	y := r.Y + 70
 	b.Text("Include", x, y, fontUI, true, colText)
@@ -585,10 +590,10 @@ func (a *App) drawExport() {
 
 // exportFormats are the Export dialog's formats, in its order.
 var exportFormats = []struct{ id, name, ext, what string }{
-	{"exp-3mf", "3MF (.3mf)", "3mf", "3D printing: one file with the colours, read by PrusaSlicer, Bambu Studio and Cura"},
-	{"exp-stl", "STL (.stl)", "stl", "3D printing: read by every slicer; no colours"},
-	{"exp-obj", "OBJ (.obj)", "obj", "3D printing and other 3D programs: the colours in a .mtl file beside it"},
-	{"exp-glb", "glTF (.glb)", "glb", "Viewing in 3D apps and on the web, with the colours"},
+	{"exp-3mf", "3MF (.3mf)", "3mf", "3D printing: one file with the colors, read by PrusaSlicer, Bambu Studio and Cura"},
+	{"exp-stl", "STL (.stl)", "stl", "3D printing: read by every slicer; no colors"},
+	{"exp-obj", "OBJ (.obj)", "obj", "3D printing and other 3D programs: the colors in a .mtl file beside it"},
+	{"exp-glb", "glTF (.glb)", "glb", "Viewing in 3D apps and on the web, with the colors"},
 	{"exp-svg", "SVG (.svg)", "svg", "Laser cutting: the outline at the design's base"},
 }
 
@@ -601,8 +606,9 @@ func (a *App) drawHelp() {
 		{"Hide selected / Show all", "Ctrl+H / Ctrl+Shift+H"}, {"Hide / show notes", "Shift+N"}, {"Toggle visibility mode", "V"}, {"Lock", "Ctrl+L"},
 		{"Transparent", "Ctrl+T"}, {"Nudge", "Arrows (Shift ×10)"}, {"Raise / lower", "Ctrl+Up / Ctrl+Down"},
 		{"Drop down", "D"}, {"Fit view", "F"}, {"Align / Mirror", "L / M"}, {"Split (then X / Y / Z, Enter)", "K"}, {"Section view", "Shift+K"}, {"Lay flat", "Shift+D"}, {"Place on surface", "C"},
-		{"Ruler / Construction plane", "R / W"}, {"Save / Open / New", "Ctrl+S / Ctrl+O / Ctrl+N"},
-		{"Orbit", "Right drag"}, {"Pan", "Middle or Shift+Right drag"}, {"Zoom", "Wheel"},
+		{"Ruler / Construction plane / Notes", "R / W / N"}, {"Save / Open / New", "Ctrl+S / Ctrl+O / Ctrl+N"},
+		{"Import / Export", "Ctrl+I / Ctrl+E"},
+		{"Orbit", "Right drag"}, {"Pan", "Middle or Shift+Right drag"}, {"Zoom", "Wheel, or + / -"},
 	}
 	// one column, or two side by side when a column is taller than the
 	// window
@@ -639,7 +645,7 @@ func (a *App) drawAbout() {
 	drawLogo(b, render.Rect{X: cx - 32, Y: r.Y + 30, W: 64, H: 64})
 	b.TextCentered("ScottiCAD", render.Rect{X: r.X, Y: r.Y + 104, W: r.W, H: 32}, fontUI+10, true, colText)
 	b.TextCentered("Version "+scotticad.Version(), render.Rect{X: r.X, Y: r.Y + 140, W: r.W, H: 22}, fontUI+1, false, colTextDim)
-	b.TextCentered("3D modelling for makers — runs locally, no cloud required", render.Rect{X: r.X, Y: r.Y + 176, W: r.W, H: 20}, fontUI, false, colText)
+	b.TextCentered("3D modeling for makers — runs locally, no cloud required", render.Rect{X: r.X, Y: r.Y + 176, W: r.W, H: 20}, fontUI, false, colText)
 	b.TextCentered("Copyright 2026 scotticad.dev. Licensed under the Apache License 2.0.", render.Rect{X: r.X, Y: r.Y + 204, W: r.W, H: 20}, fontSmall, false, colTextDim)
 	// the project link
 	lr := render.Rect{X: cx - 140, Y: r.Y + 236, W: 280, H: 22}

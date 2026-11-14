@@ -19,7 +19,7 @@ import (
 func (a *App) emergencySave(r any) {
 	msg := fmt.Sprintf("ScottiCAD hit an internal error and has to close.\n\n%v", r)
 	if a.ed != nil && a.ed.Doc != nil && (len(a.ed.Doc.Nodes) > 0 || len(a.ed.Doc.Notes) > 0) {
-		if p, err := writeRecovery(a.baseDir(""), a.ed.Name(), a.ed.Doc, time.Now()); err == nil {
+		if p, err := writeRecovery(a.baseDir(""), a.ed.Name(), a.ed.FileDoc(), time.Now()); err == nil {
 			msg += "\n\nYour design was saved to:\n" + p
 		} else {
 			msg += "\n\nThe design couldn't be saved: " + err.Error()

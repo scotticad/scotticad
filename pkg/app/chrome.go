@@ -299,6 +299,8 @@ var tileOrder = []tile{
 	{"polygon", false}, {"icosahedron", false},
 	{"star3d", false}, {"star", false}, {"heart", false},
 	{"dice", false}, {"diamond", false}, {"paraboloid", false},
+	{"slot", false}, {"arc", false}, {"fillet", false},
+	{"teardrop", false}, {"crystal", false},
 }
 
 var libraries = []string{"Basic Shapes", "Parametric", "Hardware & Enclosures", "Mechanical", "Computers & Networking", "All Shapes"}
@@ -358,6 +360,7 @@ var shapeKeywords = map[string]string{
 	"ringgear":     "gear internal annulus involute teeth",
 	"planetary":    "gear planetary epicyclic sun planet ring print in place bearing fidget spinner",
 	"elbow":        "pipe tube bend curved",
+	"benttube":     "tube pipe bend bent rail frame roll cage handrail hoop bender",
 	"spring":       "coil helix",
 	"knob":         "knurled potentiometer dial handle",
 	"hinge":        "print in place joint",
@@ -375,6 +378,19 @@ var shapeKeywords = map[string]string{
 	"wifi":         "wireless network signal icon",
 	"laserprinter": "printer paper office computer",
 	"printer3d":    "printer fdm maker computer",
+	"slot":         "stadium obround oval slotted adjustable hole capsule",
+	"arc":          "pie slice sector segment curve part ring curved wall hook",
+	"fillet":       "cove round corner edge rounding inside corner gusset",
+	"teardrop":     "horizontal hole support free overhang 45 degree drop",
+	"crystal":      "quartz gem point spike spine horn dragon geode shard",
+	"keyhole":      "hanger hanging wall mount screw head slot",
+	"bearingseat":  "ball bearing pocket press fit 608 skateboard housing",
+	"bevelgear":    "gear cone right angle 90 degree miter mitre",
+	"bevelpair":    "gear cone right angle 90 degree pair miter mitre",
+	"gt2pulley":    "timing belt pulley gt2 2gt sprocket printer",
+	"dovetail":     "joint join key socket split connector puzzle",
+	"alignpin":     "dowel pin peg joint join locating register split",
+	"qrcode":       "qr code barcode link url wifi scan",
 }
 
 // searchTiles returns every library tile (once) whose name or keywords
@@ -440,7 +456,8 @@ func tilesFor(library string) []tile {
 		// shape generators (solid tiles only: holes are made with the
 		// Hole button)
 		return []tile{{"gear", false}, {"hyperboloid", false}, {"sphereshell", false}, {"thread", false}, {"puffy", false}, {"grid", false},
-			{"diamondgrid", false}, {"honeycomb", false}, {"tubejoint", false}, {"flutedrod", false}, {"diamondmesh", false}}
+			{"diamondgrid", false}, {"honeycomb", false}, {"tubejoint", false}, {"flutedrod", false}, {"diamondmesh", false},
+			{"qrcode", false}}
 	case "Hardware & Enclosures", "Mechanical":
 		ids := shapes.HardwareKinds
 		if library == "Mechanical" {

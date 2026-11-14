@@ -1,7 +1,7 @@
 # ScottiCAD examples
 
-Ready-made designs to open, print or take apart: some made by scripts,
-which are here too, and some made by hand in ScottiCAD's editor.
+Ready-made designs to open, print or take apart: most made by scripts,
+which are here too, and one made by hand in ScottiCAD's editor.
 
 > **Not every design here has been printed and tested.** They are examples
 > of what ScottiCAD can do, not proven parts: check the sizes and fits
@@ -24,8 +24,8 @@ which are here too, and some made by hand in ScottiCAD's editor.
     that makes several versions of a design, after the version
     (`vault-case.star` makes `vault-case-pi4.scotticad` and others);
   - **original designs** made by hand in the editor, with no script
-    (`washer.scotticad`, for one). These are examples of building with
-    the mouse rather than with code.
+    (`washer.scotticad`). These are examples of building with the mouse
+    rather than with code.
 
 Every script has its design in `scotticad/`, but not every design there
 has a script.
@@ -37,15 +37,19 @@ again.
 
 To remake the script-made designs (after changing ScottiCAD, say), run
 `make examples` on Linux, or `python examples/build.py` on any platform
-after building ScottiCAD. Each script runs in a hidden ScottiCAD and its
-design is saved in `scotticad/`, replacing the old one. Original designs
+after building ScottiCAD (`--only NAME` remakes just one, such as
+`--only raspberrypi/vault-case-pi4`). Each script runs in a hidden
+ScottiCAD and its design is saved in `scotticad/`, replacing the old one
+but keeping the view it was saved with. Original designs
 have no script, so this leaves them as they are; just don't give one the
 same name as a script, or the script's design will replace it.
 
 ## The examples
 
 Each entry names its script, or, for an original design, the design
-itself.
+itself. [`published.txt`](published.txt) lists the same designs, and a
+test runs each script and checks that it still makes the design saved
+here.
 
 ### Around the house and workshop
 
@@ -133,6 +137,17 @@ apart by a clearance (`CLEAR`) and how to adjust it for your printer.
   a cage holding them, and a dial that turns one tick per turn of the
   crank. The comments work through the gear sizes and how every surface
   avoids needing supports.
+
+### Motorized
+
+- **[`wankel.star`](star/wankel.star)**: a working model of a Wankel
+  rotary engine, driven by a small TT gear motor fixed to the back. A
+  three-cornered rotor rolls round a fixed gear inside its oval housing,
+  its tips sweeping the wall, once for every three turns of the motor.
+  Three printed parts, no supports. The script works out the rotor's
+  flanks and its ring of teeth as everything that stays a clearance
+  (`CLEAR`) away from the housing's wall and the fixed gear as the rotor
+  moves. Set `ASSEMBLED` to `True` to see the engine put together.
 
 ### The calibration boat: right and wrong ways to build it
 

@@ -22,7 +22,7 @@ func sizeFor(k *Kind, v Values) geom.Vec3 {
 func TestEveryShapeAtItsSliderLimits(t *testing.T) {
 	for _, k := range All() {
 		for _, p := range k.Params {
-			if p.Kind != Slider {
+			if p.Kind != Slider && p.Kind != Choice {
 				continue
 			}
 			for _, val := range []float64{p.Min, p.Max} {
@@ -114,6 +114,15 @@ func checkMesh(t *testing.T, name string, m *geom.Mesh, size geom.Vec3) {
 	}
 	if o, n := m.EdgeCheck(1e-7); o != 0 || n != 0 {
 		t.Errorf("%s: %d open, %d non-manifold edges", name, o, n)
+	}
+	// and as an export writes it (rounded to float32, no tolerance), both
+	// as built and standing on the plate: corners a rounding error apart
+	// stay apart near a coordinate of zero, and the file has a crack there
+	for _, lift := range []float64{0, size.Z / 2} {
+		s := geom.Surface(geom.AsWritten(m.Transform(geom.Translate(geom.V(0, 0, lift)))))
+		if s.Open != 0 || s.NonManifold != 0 {
+			t.Errorf("%s: as written (lifted %g): %d open, %d non-manifold edges", name, lift, s.Open, s.NonManifold)
+		}
 	}
 	if s := m.Bounds().Size(); s.Sub(size).Len() > 1e-6*(1+size.Len()) {
 		t.Errorf("%s: size %.4g×%.4g×%.4g, want %.4g×%.4g×%.4g", name, s.X, s.Y, s.Z, size.X, size.Y, size.Z)

@@ -175,6 +175,140 @@ func TestHelicalGearBoreAndSize(t *testing.T) {
 	}
 }
 
+// selfCrossings counts pairs of a closed outline's edges that properly
+// cross. Crossings within eps of a touch are ignored, so collinear edges
+// on opposite sides of a symmetric outline don't count.
+func selfCrossings(p []Pt, eps float64) int {
+	side := func(a, b, c Pt) int {
+		switch d := cross2(a, b, c); {
+		case d > eps:
+			return 1
+		case d < -eps:
+			return -1
+		}
+		return 0
+	}
+	n, bad := len(p), 0
+	for i := 0; i < n; i++ {
+		for j := i + 2; j < n; j++ {
+			if i == 0 && j == n-1 {
+				continue
+			}
+			a, b, c, d := p[i], p[(i+1)%n], p[j], p[(j+1)%n]
+			if side(c, d, a)*side(c, d, b) < 0 && side(a, b, c)*side(a, b, d) < 0 {
+				bad++
+			}
+		}
+	}
+	return bad
+}
+
+// Every slider setting gives a gear outline that doesn't cross itself. A
+// deep tip gap on a small or many-toothed gear is the hard case: left
+// alone it would close the gaps below the base circle, push the root past
+// the axis, or bring the ring's spaces to a point and past it.
+func TestGearOutlinesSimple(t *testing.T) {
+	for _, m := range []float64{0.3, 0.5, 1.5, 5} {
+		for _, z := range []int{8, 13, 20, 40, 120} {
+			for _, tip := range []float64{0.1, 0.4, 1, 2} {
+				for _, clr := range []float64{0, 0.3, 1} {
+					o, rf := outerGearOutline(m, z, 30, clr, tip)
+					if n := selfCrossings(o, 1e-9); n > 0 || rf <= 0 || SignedArea(o) <= 0 {
+						t.Errorf("gear m=%g z=%d tip=%g clr=%g: %d crossings, root %g", m, z, tip, clr, n, rf)
+					}
+					if z < 16 {
+						continue
+					}
+					if n := selfCrossings(ringGearSpaces(m, z, 30, clr, tip), 1e-9); n > 0 {
+						t.Errorf("ring m=%g z=%d tip=%g clr=%g: %d crossings", m, z, tip, clr, n)
+					}
+				}
+			}
+		}
+	}
+}
+
+// A bevel gear's back outline stays simple across its sliders' ranges,
+// including no clearance and the most uneven pairs.
+func TestBevelOutlinesSimple(t *testing.T) {
+	for _, m := range []float64{0.5, 1.5, 5} {
+		for _, z := range []int{8, 20, 80} {
+			for _, zm := range []int{8, 20, 80} {
+				for _, clr := range []float64{0, 0.1, 0.5} {
+					o, _ := bevelOf(m, z, zm).backOutline(clr)
+					if n := selfCrossings(o, 1e-9); n > 0 || SignedArea(o) <= 0 {
+						t.Errorf("bevel m=%g z=%d mate=%d clr=%g: %d crossings", m, z, zm, clr, n)
+					}
+				}
+			}
+		}
+	}
+}
+
+// A bore is only cut when it clears the tooth roots.
+func TestHelicalBoreInsideRoots(t *testing.T) {
+	const m, z, tip = 0.3, 20, 0.4
+	for _, bore := range []float64{2, 5} {
+		mesh := outerGear(m, z, 2, 0, false, 0, tip, bore)
+		_, rf := outerGearOutline(m, z, 0, 0, tip)
+		holed := false
+		for _, tr := range mesh.Tris {
+			for _, p := range tr.P {
+				if math.Abs(math.Hypot(p.X, p.Y)-bore/2) < 1e-6 {
+					holed = true
+				}
+			}
+		}
+		if want := bore/2 < rf; holed != want {
+			t.Errorf("bore %g, root radius %g: bore cut %v, want %v", bore, rf, holed, want)
+		}
+	}
+}
+
+// Planets go where both the sun's and the ring's teeth allow (whole
+// multiples of 2π/(sun + ring teeth)), evenly when that divides by their
+// number, and planets that would touch are left out.
+func TestPlanetaryLayout(t *testing.T) {
+	k, _ := Lookup("planetary")
+	for _, tc := range []struct {
+		sun, planet, planets float64
+		want                 int
+		even                 bool
+	}{
+		{18, 12, 5, 5, true},  // 18 + 42 = 60 slots, 12 apart
+		{15, 10, 4, 4, false}, // 50 slots: 12 or 13 apart
+		{8, 20, 12, 3, false}, // big planets on a small sun: only three fit
+		{18, 12, 1, 1, true},
+	} {
+		v := k.Defaults()
+		v.Num["sun"], v.Num["planet"], v.Num["planets"] = tc.sun, tc.planet, tc.planets
+		d := planetaryLayout(v)
+		if len(d.angles) != tc.want {
+			t.Errorf("sun %v planet %v: %d planets, want %d", tc.sun, tc.planet, len(d.angles), tc.want)
+			continue
+		}
+		slot := 2 * math.Pi / float64(d.zs+d.zr)
+		a := d.m * float64(d.zs+d.zp) / 2
+		gaps := map[int]bool{}
+		for i, th := range d.angles {
+			if f := th / slot; math.Abs(f-math.Round(f)) > 1e-9 {
+				t.Errorf("sun %v planet %v: planet %d at %.4f slots", tc.sun, tc.planet, i, f)
+			}
+			if len(d.angles) < 2 {
+				continue
+			}
+			gap := math.Mod(d.angles[(i+1)%len(d.angles)]-th+2*math.Pi, 2*math.Pi)
+			gaps[int(math.Round(gap/slot))] = true
+			if 2*a*math.Sin(gap/2) < d.m*float64(d.zp+2) {
+				t.Errorf("sun %v planet %v: planets %d and %d touch", tc.sun, tc.planet, i, (i+1)%len(d.angles))
+			}
+		}
+		if tc.even && len(gaps) > 1 {
+			t.Errorf("sun %v planet %v: uneven gaps %v", tc.sun, tc.planet, gaps)
+		}
+	}
+}
+
 func TestSpurOutlineUnchanged(t *testing.T) {
 	// the spur gear's outline is toothedOutline with no cut: the shared
 	// code must not have moved a point

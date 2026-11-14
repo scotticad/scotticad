@@ -1,0 +1,29 @@
+# The examples that are published, one design name per line. Each name
+# stands for scotticad/NAME.scotticad and, when there is one, its script
+# star/NAME.star. A design made by a script of another name says so, with
+# the settings changed in it for this design:
+#   NAME  from SCRIPT  SETTING=VALUE ...
+# A design or script not listed here is not published, and README.md
+# describes exactly these (a script once, however many designs it makes).
+# python/tests/test_examples.py runs every listed script and checks that it
+# still makes its saved design; published.py reads this list.
+benchy-layered-slow
+benchy-loft
+benchy-simplified
+bit-holder
+board-mount
+cable-clips
+coasters
+crank-reducer
+folding-stand
+gear-spinner
+hook-and-bracket
+knobs
+organizer
+plant-pot
+raspberrypi/vault-case-pi4     from raspberrypi/vault-case  BOARD="pi4"
+raspberrypi/vault-case-pi5     from raspberrypi/vault-case  BOARD="pi5"
+raspberrypi/vault-case-zero2w  from raspberrypi/vault-case  BOARD="zero2w"
+spool-holder
+wankel
+washer

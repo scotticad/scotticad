@@ -296,6 +296,8 @@ func (a *App) drawFilament() {
 	if f.open {
 		h += float64(len(filamentRows)+1)*rowH + 6
 	}
+	checks := checkLines(a.printCheckNow(), a.ed.Doc.Settings.Units)
+	h += printCheckHeight(checks)
 	pr := a.filamentRect(w, h)
 	a.panel(pr)
 	px := pr.X + 16
@@ -339,6 +341,8 @@ func (a *App) drawFilament() {
 	}
 	b.Text("Supports, brims and purge aren't included.", px, cy, fontSmall, false, colTextDim)
 	cy += 24
+	a.drawPrintCheck(pr, cy-4, checks)
+	cy += printCheckHeight(checks)
 	// settings
 	sr := render.Rect{X: pr.X + 8, Y: cy - 4, W: pr.W - 16, H: 24}
 	if a.isHot("fil-settings") {

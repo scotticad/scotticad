@@ -113,6 +113,8 @@ const (
 	icChevronRight
 	icClose
 	icInfo
+	icWarning
+	icCheck
 	icMenu
 	icHide
 	icToggleVis
@@ -302,6 +304,12 @@ func drawIconAccent(b *render.Batch, id int, r render.Rect, c, accent render.Col
 		p.circle(12, 12, 9)
 		p.line(12, 11, 12, 17)
 		p.disc(12, 7.5, 1.3)
+	case icWarning:
+		p.poly(true, 12, 3, 22, 20, 2, 20)
+		p.line(12, 9, 12, 14)
+		p.disc(12, 17, 1.3)
+	case icCheck:
+		p.poly(false, 5, 12.5, 10, 17.5, 19, 7)
 	case icMenu:
 		p.line(5, 7, 19, 7)
 		p.line(5, 12, 19, 12)

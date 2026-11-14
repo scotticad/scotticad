@@ -21,7 +21,7 @@ import (
 func ptValues(r *rand.Rand, k *Kind) Values {
 	v := k.Defaults()
 	for _, p := range k.Params {
-		if p.Kind != Slider {
+		if p.Kind != Slider && p.Kind != Choice {
 			continue
 		}
 		var x float64
@@ -126,7 +126,7 @@ func ptMinimize(k *Kind, size geom.Vec3, v Values) Values {
 		cur.Num[kk] = x
 	}
 	for _, p := range k.Params {
-		if p.Kind != Slider {
+		if p.Kind != Slider && p.Kind != Choice {
 			continue
 		}
 		old := cur.Num[p.Key]

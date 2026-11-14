@@ -89,6 +89,17 @@ class MCP:
     def tool(self, tool_name, **arguments):
         return self.request("tools/call", {"name": tool_name, "arguments": arguments})
 
+    def api_port(self, timeout=30):
+        """The port of --api 127.0.0.1:0, from the line it prints on stderr
+        (which the reader thread may not have reached yet)."""
+        end = time.time() + timeout
+        while time.time() < end:
+            for l in list(self.stderr):
+                if l.startswith("SCOTTICAD_API "):
+                    return int(l.split()[1].rsplit(":", 1)[1])
+            time.sleep(0.02)
+        raise AssertionError("no SCOTTICAD_API line on stderr: " + "".join(self.stderr))
+
     def close(self, timeout=30):
         """Hang up, as a client does, and wait for the server to go."""
         self.proc.stdin.close()
@@ -167,13 +178,12 @@ def test_all_in_one_builds_looks_and_undoes(mcp):
 
     assert mcp.close() == 0, "headless: hanging up quits"
     assert mcp.not_json == [], "stdout carried something other than MCP"
-    assert any(l.startswith("SCOTTICAD_API ") for l in mcp.stderr), "--api's line goes to stderr"
+    assert mcp.api_port(timeout=5), "--api's line goes to stderr"
 
 
 def test_all_in_one_shares_the_window_with_the_api(mcp):
     mcp.initialize()
-    port = next(int(l.split()[1].rsplit(":", 1)[1]) for l in mcp.stderr if l.startswith("SCOTTICAD_API "))
-    with Client(port=port) as cad:
+    with Client(port=mcp.api_port()) as cad:
         box = cad.add_shape("box")
         assert [n["id"] for n in json.loads(text(mcp.tool("list_nodes")))] == [box]
 
@@ -186,18 +196,17 @@ def test_script_errors_are_tool_errors(mcp):
 
 def test_cancelling_run_script_stops_it(mcp):
     mcp.initialize()
-    port = next(int(l.split()[1].rsplit(":", 1)[1]) for l in mcp.stderr if l.startswith("SCOTTICAD_API "))
+    port = mcp.api_port()
     mcp.next_id += 1
     script_id = mcp.next_id
     mcp.send({"jsonrpc": "2.0", "id": script_id, "method": "tools/call",
               "params": {"name": "run_script", "arguments": {"code": "while True:\n    pass\n"}}})
     with Client(port=port) as cad:
-        for _ in range(100):
-            if cad.call("get_console")["running"]:
-                break
+        end = time.time() + 30
+        while not cad.call("get_console")["running"]:
+            if time.time() > end:
+                pytest.fail("the script didn't start")
             time.sleep(0.02)
-        else:
-            pytest.fail("the script didn't start")
         assert len(mcp.request("ping")) == 0, "the server answers meanwhile"
         mcp.send({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": script_id}})
         r = mcp.tool("run_script", code="print('next')")  # busy if the first were still running

@@ -73,7 +73,9 @@ func read3MF(t *testing.T, data []byte) (model3MF, map[string]string) {
 
 func TestWrite3MF(t *testing.T) {
 	red, blue := Color{1, 0, 0}, Color{0, 0.5, 1}
-	m := Merge(box(V(0, 0, 0), V(20, 10, 5)).Colored(red), box(V(40, 0, 0), V(4, 4, 4)).Colored(blue))
+	// the small box against the big one's end: one object (box takes a
+	// centre and a size)
+	m := Merge(box(V(0, 0, 0), V(20, 10, 5)).Colored(red), box(V(12, 0, 0), V(4, 4, 4)).Colored(blue))
 	// a triangle of no area: left out
 	m.Tris = append(m.Tris, Tri{P: [3]Vec3{V(0, 0, 0), V(1, 0, 0), V(2, 0, 0)}, C: red})
 	var buf bytes.Buffer
@@ -176,7 +178,7 @@ func TestWrite3MFKeepsAMulticolourShellWhole(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		two.Tris[len(two.Tris)-1-i].C = blue
 	}
-	m := Merge(two, box(V(40, 0, 0), V(4, 4, 4)).Colored(blue))
+	m := Merge(two, box(V(12, 0, 0), V(4, 4, 4)).Colored(blue))
 	var buf bytes.Buffer
 	if err := Write3MF(&buf, m, "d"); err != nil {
 		t.Fatal(err)
@@ -235,9 +237,102 @@ func TestWrite3MFParts(t *testing.T) {
 	if got.Objects[0].PIndex != 0 {
 		t.Errorf("a tie went to colour %d, not the first", got.Objects[0].PIndex)
 	}
-	two := write(Merge(box(V(0, 0, 0), V(4, 4, 4)).Colored(red), box(V(20, 0, 0), V(4, 4, 4)).Colored(red)))
+	two := write(Merge(box(V(0, 0, 0), V(4, 4, 4)).Colored(red), box(V(4, 0, 0), V(4, 4, 4)).Colored(red)))
 	if len(two.Objects) != 1 || len(two.Objects[0].Triangles) != 24 {
-		t.Errorf("two red shells: %d objects", len(two.Objects))
+		t.Errorf("two touching red shells: %d objects", len(two.Objects))
+	}
+}
+
+// Pieces laid out apart are objects of their own, each placed by the build,
+// so a slicer has them apart without splitting anything; each keeps its
+// colours as its parts.
+func TestWrite3MFObjectsApart(t *testing.T) {
+	red, blue := Color{1, 0, 0}, Color{0, 0.5, 1}
+	m := Merge(
+		box(V(0, 0, 0), V(10, 10, 2)).Colored(red),  // a base
+		box(V(20, 0, 0), V(10, 10, 2)).Colored(red), // a lid, apart, with a blue knob on it
+		box(V(20, 0, 2), V(2, 2, 2)).Colored(blue))
+	var buf bytes.Buffer
+	if err := Write3MF(&buf, m, "d"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := read3MF(t, buf.Bytes())
+	// the base; the lid's red and blue parts and the lid made of them
+	if len(got.Objects) != 4 || len(got.Items) != 2 {
+		t.Fatalf("%d objects, %d build items: want the base, and the lid of two parts", len(got.Objects), len(got.Items))
+	}
+	base, lid := got.Objects[0], got.Objects[3]
+	if got.Items[0].ObjectID != base.ID || got.Items[1].ObjectID != lid.ID || base.Name != "d 1" || lid.Name != "d 2" {
+		t.Fatalf("build items %v; objects %q, %q", got.Items, base.Name, lid.Name)
+	}
+	if len(base.Triangles) != 12 || len(base.Components) != 0 || base.PIndex != 0 {
+		t.Errorf("the base: %+v", base)
+	}
+	if len(lid.Components) != 2 || lid.Components[0].ObjectID != got.Objects[1].ID || lid.Components[1].ObjectID != got.Objects[2].ID ||
+		got.Objects[1].PIndex != 0 || got.Objects[2].PIndex != 1 {
+		t.Errorf("the lid's parts: %+v", got.Objects[1:])
+	}
+}
+
+// An inlay shares edges with the pocket it fills (here a blue slab on a red
+// block, flush along their whole outline). Each closes up on its own, so
+// each is a part of its own colour, not one shell coloured triangle by
+// triangle, which slicers drop.
+func TestWrite3MFInlayIsItsOwnPart(t *testing.T) {
+	red, blue := Color{1, 0, 0}, Color{0, 0.5, 1}
+	m := Merge(box(V(0, 0, 0), V(10, 10, 5)).Colored(red), box(V(0, 0, 3), V(10, 10, 1)).Colored(blue))
+	var buf bytes.Buffer
+	if err := Write3MF(&buf, m, "d"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := read3MF(t, buf.Bytes())
+	if len(got.Objects) != 3 || len(got.Items) != 1 || len(got.Objects[2].Components) != 2 {
+		t.Fatalf("%d objects: want a red part, a blue part and the object of both", len(got.Objects))
+	}
+	for k, obj := range got.Objects[:2] {
+		if obj.PIndex != k || len(obj.Triangles) != 12 {
+			t.Errorf("part %d: colour %d, %d triangles", k, obj.PIndex, len(obj.Triangles))
+		}
+		for _, tr := range obj.Triangles {
+			if tr.P1 != nil {
+				t.Errorf("part %d: a triangle coloured on its own", k)
+				break
+			}
+		}
+	}
+}
+
+// Corners that differ only below float32 precision are one vertex in the
+// file, as they are in what the health check sees (AsWritten): 3MF meshes
+// are joined up by vertex index, so two indexes at one point would be a
+// crack to a slicer.
+func TestWrite3MFSharesVerticesAtFileablePrecision(t *testing.T) {
+	m := box(V(0, 0, 0), V(10, 10, 10))
+	for k := range m.Tris[0].P {
+		if p := &m.Tris[0].P[k]; p.X > 0 {
+			p.X += 1e-9 // 5 + 1e-9 is 5 in float32
+		}
+	}
+	var buf bytes.Buffer
+	if err := Write3MF(&buf, m, "d"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := read3MF(t, buf.Bytes())
+	obj := got.Objects[0]
+	if len(obj.Vertices) != 8 {
+		t.Fatalf("%d vertices, want the box's 8", len(obj.Vertices))
+	}
+	uses := map[[2]int]int{}
+	for _, tr := range obj.Triangles {
+		v := [3]int{tr.V1, tr.V2, tr.V3}
+		for k := 0; k < 3; k++ {
+			uses[[2]int{v[k], v[(k+1)%3]}]++
+		}
+	}
+	for e, n := range uses {
+		if uses[[2]int{e[1], e[0]}] != n {
+			t.Fatalf("edge %v open by index", e)
+		}
 	}
 }
 

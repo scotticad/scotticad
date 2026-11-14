@@ -91,6 +91,12 @@ func FuzzUnmarshal(f *testing.F) {
 	// the largest id: NextID = maxID+1 overflows, and the next new id is 1 again
 	f.Add([]byte(`{"nodes":[{"id":9223372036854775807,"kind":"box"},{"id":1,"kind":"box"},{"kind":"box"}]}`))
 	f.Add([]byte(`{"nodes":[{"id":1,"kind":"box"}],"nextId":9223372036854775807}`))
+	// bent tubes: a table as saved, and tables no editor would write
+	f.Add([]byte(`{"version":3,"nodes":[{"id":1,"kind":"benttube","size":[35,35,10],"params":{"diameter":10,"wall":2,"bend":15,"sides":16},
+"bends":[{"length":20,"angle":90},{"length":20,"angle":-45,"turn":90},{"length":5}]}]}`))
+	f.Add([]byte(`{"version":3,"nodes":[{"id":1,"kind":"benttube","size":[1,1,1],"bends":[{"length":1e308,"angle":1e308,"turn":-1e308},{"length":-5}]},
+{"id":2,"kind":"benttube","size":[10,10,10]},{"id":3,"kind":"benttube","bends":[]},{"id":4,"kind":"box","size":[5,5,5],"bends":[{"length":3}]},
+{"id":5,"kind":"benttube","size":[0,0,0],"m":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],"params":{"diameter":-1,"sides":1e9,"bend":0},"bends":[{"angle":180},{"angle":180},{"angle":180}]}]}`))
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`null`))
 	f.Add([]byte(`[]`))

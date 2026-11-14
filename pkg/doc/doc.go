@@ -27,7 +27,8 @@ import (
 //
 //	1: everything before 2
 //	2: outline and loft shapes (Node.Sections)
-const FormatVersion = 2
+//	3: bent tubes (Node.Bends)
+const FormatVersion = 3
 
 // maxNodeID is the largest id a file may give a node (larger ones are
 // renumbered): ids count up from the largest, and must not overflow.
@@ -70,7 +71,10 @@ type Node struct {
 	// frame (see shapes.Section). They are replaced, never changed in
 	// place, so clones share them.
 	Sections []shapes.Section `json:"sections,omitempty"`
-	Notes    []Note           `json:"notes,omitempty"`
+	// Bends are a bent tube's bend table (see shapes.Bend), replaced the
+	// same way.
+	Bends []shapes.Bend `json:"bends,omitempty"`
+	Notes []Note        `json:"notes,omitempty"`
 	// Assembly, on a bundle group, is the assembly kind it was placed as
 	// (its Params are the assembly's); see shapes.Placed.
 	Assembly string `json:"assembly,omitempty"`
@@ -164,7 +168,7 @@ func (n *Node) Label() string {
 
 // Values returns the parameter set used to build a shape leaf.
 func (n *Node) Values() shapes.Values {
-	return shapes.Values{Num: n.Params, Text: n.Text, Font: n.Font, Sections: n.Sections}
+	return shapes.Values{Num: n.Params, Text: n.Text, Font: n.Font, Sections: n.Sections, Bends: n.Bends}
 }
 
 // sectionsHash is a hash of Sections, worked out once per slice (a loft
@@ -300,7 +304,7 @@ func (n *Node) writeKey(sb *strings.Builder, own, colors bool) {
 	for _, k := range keys {
 		fmt.Fprintf(sb, "%s=%g,", k, n.Params[k])
 	}
-	fmt.Fprintf(sb, "%q|%q|%s|%d|", n.Text, n.Font, n.sectionsHash(), len(n.MeshData))
+	fmt.Fprintf(sb, "%q|%q|%s|%s|%d|", n.Text, n.Font, n.sectionsHash(), shapes.BendsKey(n.Bends), len(n.MeshData))
 	if n.Kind == KindMesh {
 		sb.WriteString(n.meshDataHash())
 	}
@@ -620,6 +624,22 @@ type Document struct {
 	// Notes pinned to the workplane rather than to a shape (P is a world
 	// position)
 	Notes []Note `json:"notes,omitempty"`
+	// Ruler and Workplane are the ruler and the construction plane as they
+	// were when the design was saved, so it reopens with them. Like the
+	// camera they help with editing and aren't part of the design: only the
+	// file carries them (editor.Editor holds them while editing), so placing
+	// a ruler is no undo step and no unsaved change. Older versions ignore
+	// them.
+	Ruler     *Ruler     `json:"ruler,omitempty"`
+	Workplane *geom.Mat4 `json:"constructionPlane,omitempty"`
+}
+
+// Ruler is the saved ruler: its origin on the workplane, whether it
+// measures to midpoints, and its quarter turns counter-clockwise.
+type Ruler struct {
+	Origin geom.Vec3 `json:"origin"`
+	Mid    bool      `json:"mid,omitempty"`
+	Turns  int       `json:"turns,omitempty"`
 }
 
 func New() *Document {
@@ -697,7 +717,9 @@ func (d *Document) neededVersion() int {
 	v := 1
 	for _, n := range d.Nodes {
 		n.Walk(func(x *Node) {
-			if len(x.Sections) > 0 {
+			if len(x.Bends) > 0 {
+				v = 3
+			} else if len(x.Sections) > 0 && v < 2 {
 				v = 2
 			}
 		})
@@ -709,7 +731,8 @@ func (d *Document) neededVersion() int {
 func Unmarshal(b []byte) (*Document, error) {
 	d := &Document{}
 	if err := json.Unmarshal(b, d); err != nil {
-		return nil, err
+		// in words: this is shown to someone who opened the wrong file
+		return nil, fmt.Errorf("not a ScottiCAD design (%v)", err)
 	}
 	if d.Version == 0 {
 		d.Version = FormatVersion

@@ -269,3 +269,17 @@ func TestNaturalSizeClamps(t *testing.T) {
 		t.Fatal("NaturalSize built the unclamped value")
 	}
 }
+
+// A Choice's value is an index into its options: defaults to the given
+// one, and a file's value is held to a whole index in range.
+func TestChoiceClamp(t *testing.T) {
+	k := &Kind{ID: "choicetest", Params: []Param{choice("pick", "Pick", []string{"A", "B", "C"}, 1)}}
+	if d := k.Defaults().Get("pick", -1); d != 1 {
+		t.Errorf("default %v, want 1", d)
+	}
+	for in, want := range map[float64]float64{-3: 0, 0.6: 1, 1.4: 1, 7.6: 2, math.NaN(): 1} {
+		if got := k.clamp(Values{Num: map[string]float64{"pick": in}}).Get("pick", -1); got != want {
+			t.Errorf("%v clamped to %v, want %v", in, got, want)
+		}
+	}
+}

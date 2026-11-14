@@ -18,12 +18,12 @@ func (d *Document) AddShape(kind string, pos geom.Vec3, hole bool) (*Node, error
 	v := k.Defaults()
 	if parts, ok := k.Parts(v); ok {
 		g := &Node{ID: d.newID(), Kind: KindGroup, GroupMode: ModeBundle, Assembly: k.ID, Name: k.Label,
-			Params: v.Num, Color: k.Color, M: geom.Translate(pos)}
+			Params: v.Num, Text: v.Text, Color: k.Color, M: geom.Translate(pos)}
 		d.layout(g, parts, v, hole)
 		d.Nodes = append(d.Nodes, g)
 		return g, nil
 	}
-	n := &Node{ID: d.newID(), Kind: k.ID, Params: v.Num, Text: v.Text, Font: v.Font, Sections: v.Sections, Size: k.Size, Color: k.Color, Hole: hole}
+	n := &Node{ID: d.newID(), Kind: k.ID, Params: v.Num, Text: v.Text, Font: v.Font, Sections: v.Sections, Bends: v.Bends, Size: k.Size, Color: k.Color, Hole: hole}
 	if k.ID == "text" {
 		n.Size = shapes.TextNaturalSize(n.Text, n.Font, n.Params["height"])
 	}
@@ -66,20 +66,72 @@ func SetSections(n *Node, ss []shapes.Section) error {
 	return nil
 }
 
-// SetProfileParam changes an outline's or loft's parameter (smoothing),
-// keeping its points where they were (see SetSections).
+// SetProfileParam changes a parameter of a shape with point data (an
+// outline's smoothing, a bent tube's diameter or bend radius), keeping its
+// points where they were (see SetSections).
 func SetProfileParam(n *Node, key string, v float64) {
 	keepFrame(n, func() { SetParam(n, key, v) })
 }
 
-// keepFrame makes a change to an outline or loft that may change the box
+// SetBends replaces a bent tube's bend table. Like an outline's points,
+// the table is in the shape's own frame: the tube's start stays where it
+// was, and a move, turn or resize the shape has had carries over.
+func SetBends(n *Node, bs []shapes.Bend) error {
+	if !shapes.IsTube(n.Kind) {
+		return errors.New("not a bent tube")
+	}
+	if err := shapes.CheckBends(bs); err != nil {
+		return err
+	}
+	keepFrame(n, func() { n.Bends = append([]shapes.Bend(nil), bs...) })
+	return nil
+}
+
+// FrameToParent maps a point of a shape's own frame (where its point data
+// is: a bent tube's table starts at the origin) into its parent's space,
+// through its size and matrix. ok is false for a shape with no usable data.
+func (n *Node) FrameToParent() (func(geom.Vec3) geom.Vec3, bool) {
+	b := shapes.FrameBounds(n.Kind, n.Values())
+	if b.IsEmpty() {
+		return nil, false
+	}
+	f := geom.V(1, 1, 1)
+	for i := 0; i < 3; i++ {
+		if s := b.Size().Axis(i); s > 1e-12 {
+			f = f.WithAxis(i, n.Size.Axis(i)/s)
+		}
+	}
+	c := b.Center()
+	return func(p geom.Vec3) geom.Vec3 { return n.M.Point(p.Sub(c).MulV(f)) }, true
+}
+
+// TubeEnds returns a bent tube's start and end in its parent's space, each
+// as [point, unit direction along the tube].
+func (n *Node) TubeEnds() (start, end [2]geom.Vec3, ok bool) {
+	to, ok := n.FrameToParent()
+	if !ok || !shapes.IsTube(n.Kind) {
+		return start, end, false
+	}
+	_, _, r := shapes.TubeRadii(n.Values())
+	path, _ := shapes.TubePath(n.Bends, r)
+	if len(path) == 0 {
+		return start, end, false
+	}
+	at := func(s shapes.TubeStation) [2]geom.Vec3 {
+		p := to(s.P)
+		return [2]geom.Vec3{p, to(s.P.Add(s.T)).Sub(p).Norm()}
+	}
+	return at(path[0]), at(path[len(path)-1]), true
+}
+
+// keepFrame makes a change to a shape with point data that may change the box
 // its points fill, keeping the points in the shape's own frame: an
 // unmoved shape's points stay exactly where they say, and a moved, turned
 // or resized one carries that over.
 func keepFrame(n *Node, change func()) {
-	old := shapes.ProfileBounds(n.Kind, n.Values())
+	old := shapes.FrameBounds(n.Kind, n.Values())
 	change()
-	nw := shapes.ProfileBounds(n.Kind, n.Values())
+	nw := shapes.FrameBounds(n.Kind, n.Values())
 	if nw.IsEmpty() {
 		return
 	}
@@ -115,13 +167,14 @@ func (d *Document) layout(g *Node, parts []shapes.Placed, v shapes.Values, hole 
 			}
 		}
 		if c == nil {
-			c = &Node{ID: d.newID(), Kind: p.Kind, Name: p.Name, Color: p.Color, Hole: hole}
+			c = &Node{ID: d.newID(), Kind: p.Kind, Name: p.Name, Color: p.Color, Hole: hole || p.Hole}
 		}
 		used[c] = true
 		c.Params = map[string]float64{}
 		for k, x := range v.Num {
 			c.Params[k] = x
 		}
+		c.Text = v.Text // a QR code's parts are made from its text
 		c.Size = shapes.PartSize(p.Kind, v)
 		c.M = p.M
 		kids = append(kids, c)
@@ -140,11 +193,41 @@ func (d *Document) SetAssemblyParam(g *Node, key string, val float64) error {
 		g.Params = k.Defaults().Num
 	}
 	g.Params[key] = val
-	v := shapes.Values{Num: g.Params}
-	parts, _ := k.Parts(v)
-	hole := len(g.Children) > 0 && g.Children[0].Hole
-	d.layout(g, parts, v, hole)
+	d.relayout(g, k)
 	return nil
+}
+
+// SetAssemblyText changes the text of an assembly made from text (a QR
+// code) and rebuilds its parts to match.
+func (d *Document) SetAssemblyText(g *Node, text string) error {
+	k, ok := shapes.Lookup(g.Assembly)
+	if !ok {
+		return errors.New("unknown assembly: " + g.Assembly)
+	}
+	if g.Params == nil {
+		g.Params = k.Defaults().Num
+	}
+	g.Text = text
+	d.relayout(g, k)
+	return nil
+}
+
+func (d *Document) relayout(g *Node, k *shapes.Kind) {
+	v := shapes.Values{Num: g.Params, Text: g.Text}
+	parts, _ := k.Parts(v)
+	// the assembly was made a hole if a part that is solid as built (not
+	// a joint's socket, which is a hole on its own) is a hole now
+	solid := map[string]bool{}
+	for _, p := range parts {
+		if !p.Hole {
+			solid[p.Kind] = true
+		}
+	}
+	hole := false
+	for _, c := range g.Children {
+		hole = hole || (c.Hole && solid[c.Kind])
+	}
+	d.layout(g, parts, v, hole)
 }
 
 // AddMesh adds an imported mesh with its bottom centre at pos.

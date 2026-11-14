@@ -102,7 +102,11 @@ func (a *App) drawInspector() {
 	cr := render.Rect{X: r.X + 6, Y: r.Y + 8, W: 24, H: 24}
 	drawIcon(b, chev, cr.Inset(4), colIcon)
 	a.button("insp-collapse", cr, "", "", 0, func() { a.inspectorOpen = !a.inspectorOpen })
-	b.Text(title, r.X+36, r.Y+20-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
+	if multi {
+		b.Text(title, r.X+36, r.Y+20-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
+	} else {
+		a.nameField(n, render.Rect{X: r.X + 36 - labelPadX, Y: r.Y + 8, W: r.W - 64 - 36 - 6 + labelPadX, H: 24})
+	}
 	locked := true
 	for _, x := range ns {
 		locked = locked && x.Locked
@@ -288,7 +292,141 @@ func (a *App) paramsHeight(n *doc.Node, ps []shapes.Param) float64 {
 			h += 52
 		}
 	}
+	if shapes.IsTube(n.Kind) {
+		h += bendTableHeight(len(n.Bends))
+	}
 	return h
+}
+
+// The bent tube's bend table: a header, a row per bend, and an add button.
+const (
+	bendHeaderH = 40.0
+	bendRowH    = 30.0
+	bendAddH    = 34.0
+)
+
+func bendTableHeight(rows int) float64 { return bendHeaderH + float64(rows)*bendRowH + bendAddH }
+
+// drawBendTable draws a bent tube's bend table at (x, y): for each row a
+// straight length, the bend's angle and its turn about the tube, each a
+// number field, and a button that deletes the row; then a button that adds
+// one. Each change is one undo step.
+func (a *App) drawBendTable(n *doc.Node, x, y, w float64) {
+	b := a.batch
+	units := a.units()
+	b.Text("Bends", x+4, y, fontSmall, false, colText)
+	ir := render.Rect{X: x + 4 + b.TextWidth("Bends", fontSmall, false) + 6, Y: y - 1, W: 16, H: 16}
+	drawIcon(b, icInfo, ir, colIcon)
+	a.button("bend-info", ir, "Each row: a straight run, then a bend through the angle (negative bends the other way), its plane first turned about the tube", "", tipBelow, func() {})
+	num := 22.0                   // the row number
+	del := 20.0                   // the delete button
+	fw := (w - 8 - num - del) / 3 // each field
+	cols := []string{"Length", "Angle", "Turn"}
+	for i, c := range cols {
+		b.Text(c, x+4+num+float64(i)*fw+2, y+20, fontSmall, false, colTextDim)
+	}
+	y += bendHeaderH
+	set := func(bs []shapes.Bend) {
+		if err := a.ed.SetBends(n.ID, bs); err != nil {
+			a.showToast(err.Error())
+		}
+	}
+	picked := a.pickedBendRow(n)
+	for i := range n.Bends {
+		row := i
+		nc := colTextDim
+		if row == picked {
+			b.RoundRect(render.Rect{X: x, Y: y, W: w, H: bendRowH}, 4, colRaised)
+			b.RoundRect(render.Rect{X: x + 1, Y: y + 4, W: 3, H: bendRowH - 8}, 1.5, colBlue)
+			nc = colBlue
+		}
+		b.Text(strconv.Itoa(i+1), x+6, y+bendRowH/2-b.LineHeight(fontSmall, false)/2, fontSmall, row == picked, nc)
+		for c := 0; c < 3; c++ {
+			col := c
+			bend := n.Bends[row]
+			val := []float64{bend.Length, bend.Angle, bend.Turn}[col]
+			text := trimDecimals(val, 2) + "°"
+			if col == 0 {
+				text = editor.Format(val, units, true)
+			}
+			fr := render.Rect{X: x + 4 + num + float64(col)*fw, Y: y + 2, W: fw - 4, H: bendRowH - 6}
+			change := func(v float64) {
+				bs := append([]shapes.Bend(nil), n.Bends...)
+				switch col {
+				case 0:
+					bs[row].Length = v
+				case 1:
+					bs[row].Angle = v
+				default:
+					bs[row].Turn = v
+				}
+				set(bs)
+			}
+			a.numberField(fmt.Sprintf("bend-%d-%d", row, col), fr, text, func(s string) bool {
+				var v float64
+				var err error
+				if col == 0 {
+					v, err = editor.Parse(s, units)
+				} else {
+					v, err = strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), "°")), 64)
+				}
+				if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+					a.showToast("not a number: " + s)
+					return true
+				}
+				change(v)
+				return true
+			}, func(dir float64) {
+				step := []float64{1, 5, 15}[col]
+				if col == 0 && units == "in" {
+					step = 25.4 / 16
+				}
+				v := val + dir*step
+				if col == 0 {
+					v = math.Max(0, v)
+				}
+				change(v)
+			})
+		}
+		dr := render.Rect{X: x + w - del - 2, Y: y + bendRowH/2 - 8, W: 16, H: 16}
+		dc := colIcon
+		if a.isHot(fmt.Sprintf("bend-del-%d", row)) {
+			dc = colIconHover
+		}
+		drawIcon(b, icClose, dr, dc)
+		a.button(fmt.Sprintf("bend-del-%d", row), dr.Inset(-2), "Delete this row", "", tipBelow, func() {
+			if len(n.Bends) <= 1 {
+				a.showToast("a bent tube needs at least one row")
+				return
+			}
+			set(append(append([]shapes.Bend(nil), n.Bends[:row]...), n.Bends[row+1:]...))
+		})
+		y += bendRowH
+	}
+	// add a row: another straight run, after a bend in the last row (given
+	// one if it had none, so the new run goes somewhere new)
+	ar := render.Rect{X: x + 4, Y: y + 4, W: w - 8, H: bendAddH - 8}
+	bg := colChrome
+	if a.isHot("bend-add") {
+		bg = colHoverBG
+	}
+	b.RoundRect(ar, 3, bg)
+	b.RoundRectStroke(ar, 3, 1, colFieldBorder)
+	b.TextCentered("+ Add bend", ar, fontSmall, false, colText)
+	a.button("bend-add", ar, "", "", 0, func() {
+		bs := append([]shapes.Bend(nil), n.Bends...)
+		l := 20.0
+		if len(bs) > 0 {
+			last := &bs[len(bs)-1]
+			if last.Angle == 0 {
+				last.Angle = 90
+			}
+			if last.Length > 0 {
+				l = last.Length
+			}
+		}
+		set(append(bs, shapes.Bend{Length: l}))
+	})
 }
 
 func (a *App) paramValue(n *doc.Node, p shapes.Param) float64 {
@@ -379,7 +517,9 @@ func (a *App) drawParams(n *doc.Node, ps []shapes.Param, x, y, w float64) {
 			b.Text(p.Label, x+4, y, fontSmall, false, colTextDim)
 			fr := render.Rect{X: x + 4, Y: y + 18, W: w - 8, H: 26}
 			a.textInput(id, fr, n.Text, func(s string) {
-				a.ed.SetTextLive(n, s, n.Font)
+				if err := a.ed.SetTextLive(n, s, n.Font); err != nil {
+					a.showToast(err.Error())
+				}
 			}, func(s string) bool {
 				// typing changed the doc live; record one undo step
 				a.ed.EndEdit()
@@ -404,7 +544,21 @@ func (a *App) drawParams(n *doc.Node, ps []shapes.Param, x, y, w float64) {
 				a.fontMenuAt = fr
 			}
 			y += 52
+		case shapes.Choice:
+			b.Text(p.Label, x+4, y, fontSmall, false, colTextDim)
+			fr := render.Rect{X: x + 4, Y: y + 18, W: w - 8, H: 26}
+			cur := int(math.Max(0, math.Min(math.Round(a.paramValue(n, p)), float64(len(p.Options)-1))))
+			key, nid := p.Key, n.ID
+			a.dropdown(id, fr, p.Options[cur], p.Options, func(i int) {
+				if err := a.ed.SetParam(nid, key, float64(i)); err != nil {
+					a.showToast(err.Error())
+				}
+			})
+			y += 52
 		}
+	}
+	if shapes.IsTube(n.Kind) {
+		a.drawBendTable(n, x, y, w)
 	}
 }
 
@@ -598,6 +752,40 @@ func (a *App) numberField(id string, r render.Rect, value string, commit func(st
 	drawIcon(b, icChevronDown, dn.Inset(1), colIcon)
 	a.button(id+"-up", up, "", "", 0, func() { step(1) })
 	a.button(id+"-dn", dn, "", "", 0, func() { step(-1) })
+}
+
+// nameField is the Properties header's shape name: plain text until
+// clicked, then a field to type a new name in. Enter keeps it (one undo
+// step), Esc doesn't; an empty name gives the shape back its kind's name.
+func (a *App) nameField(n *doc.Node, r render.Rect) {
+	b := a.batch
+	const id = "insp-name"
+	id0, label := n.ID, n.Label()
+	active := a.field != nil && a.field.id == id
+	if active || a.isHot(id) {
+		bc := colFieldBorder
+		if active {
+			b.RoundRect(r, 3, colChrome)
+			bc = colBlue
+		}
+		b.RoundRectStroke(r, 3, 1, bc)
+	}
+	b.PushClip(r)
+	a.drawFieldText(id, r, label, fontUI, false, colText)
+	b.PopClip()
+	a.reg(region{r: r, id: id, tip: "Click to rename", cursor: window.CursorIBeam, press: func(x, y float64, m window.Mods) func(float64, float64, bool) {
+		if a.field == nil || a.field.id != id {
+			a.openField(&textField{id: id, text: label, commit: func(s string) bool {
+				if s = strings.TrimSpace(s); s != label {
+					if err := a.ed.Rename(id0, s); err != nil {
+						a.showToast(err.Error())
+					}
+				}
+				return true
+			}})
+		}
+		return nil
+	}})
 }
 
 // textInput is a single-line text field with live updates.

@@ -114,6 +114,10 @@ type App struct {
 
 	inspectorOpen bool
 	propsOpen     bool
+	// bendRow is the bent tube's bend-table row picked (by its marker on
+	// the tube, or by typing in it), shown in both places; -1 is none.
+	// bendRowOf is the tube it belongs to.
+	bendRow, bendRowOf int
 	// inspScroll is how far the inspector's body is scrolled up when the
 	// window is too short to show it all
 	inspScroll  float64
@@ -184,6 +188,8 @@ type App struct {
 	layHover *layFace
 	// the filament estimate's settings and last result
 	fil filamentState
+	// the print check's last result, and its cache of checked surfaces
+	check printCheckState
 	// rev counts changes to the design (for caches)
 	rev int
 	// tbRows is the toolbar's rows: 2 only on a very narrow window
@@ -230,6 +236,7 @@ func New(o Options) (*App, error) {
 		thumbs:        map[string]render.Sprite{},
 		inspectorOpen: true,
 		propsOpen:     true,
+		bendRow:       -1,
 		panelOpen:     true,
 		library:       "Basic Shapes",
 		hoverHandle:   -1,
@@ -251,6 +258,7 @@ func New(o Options) (*App, error) {
 	}
 	a.w = w
 	w.IgnoreInput = o.Headless
+	w.PrivateClipboard = o.Headless
 	if !o.Headless {
 		w.OnPanic = a.emergencySave // a crash saves the design first
 	}
@@ -496,15 +504,20 @@ func (a *App) MouseUp(btn int, x, y float64, m window.Mods) {
 }
 
 // CaptureLost ends a drag whose button-up won't come (the mouse was taken
-// by another window): a viewport drag is cancelled, a control's drag
-// (a slider, the colour square) finishes where it is.
+// by another window): a viewport drag is cancelled, as is a shape's drag
+// from the panel; a control's drag (a slider, the colour square) finishes
+// where it is.
 func (a *App) CaptureLost() {
 	if a.drag != nil {
 		a.dragCancel()
 	}
 	if d := a.pressDrag; d != nil {
 		a.pressDrag = nil
-		d(a.mx, a.my, true)
+		if a.place != nil && strings.HasPrefix(a.pressed, "tile-") {
+			a.place = nil // a shape being dragged from the panel: let go of, not dropped where it happens to be
+		} else {
+			d(a.mx, a.my, true)
+		}
 	}
 	a.pressed, a.pressRegion = "", nil
 	a.w.Redraw()
@@ -580,7 +593,14 @@ func (a *App) KeyDown(vk int, m window.Mods, repeat bool) {
 	if a.pressDrag != nil {
 		// a slider or colour drag is under way: Ctrl+Z now would end its
 		// edit and the rest of the drag would change the design outside
-		// any undo step
+		// any undo step. Only Esc does anything, and only to a shape being
+		// dragged from the panel: it lets go of it
+		if vk == vkEscape && a.place != nil && strings.HasPrefix(a.pressed, "tile-") {
+			a.place = nil
+			a.pressDrag, a.pressed, a.pressRegion = nil, "", nil
+			a.w.Capture(false)
+			a.w.Redraw()
+		}
 		return
 	}
 	if a.con.focus != nil && a.drag == nil && a.popup == popNone && a.consoleKey(vk, m) {
@@ -857,9 +877,6 @@ func (a *App) finishPress() {
 		switch d.kind {
 		case dragOrbit, dragPan, dragCube, dragMarquee:
 			// the view or a selection rectangle: carries on
-		case dragTile:
-			a.drag, a.place = nil, nil
-			a.w.Capture(false)
 		default:
 			a.dragEnd(a.mx, a.my, a.mods)
 			a.w.Capture(false)

@@ -45,6 +45,7 @@ func (a *App) drawViewportOverlay() {
 	a.drawMoveBars()
 	a.drawHandles()
 	a.drawNotes() // over the size lines: the Z rotation handle sits on one
+	a.drawTubeMarkers()
 	a.drawAlignMirror()
 	a.drawSplit()
 	a.drawSection()

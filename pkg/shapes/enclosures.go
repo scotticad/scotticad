@@ -17,6 +17,9 @@ import (
 type Placed struct {
 	Kind, Name, Color string
 	M                 geom.Mat4
+	// Hole makes the part a hole when it is first placed (a joint's
+	// socket), whatever the assembly was placed as.
+	Hole bool
 }
 
 // Parts lays out an assembly for parameters v; ok is false for ordinary
@@ -60,12 +63,20 @@ func registerAssembly(list *[]string, id, label, color string, params []Param, p
 
 // registerHiddenPart registers an assembly's part kind (not shown in the
 // libraries).
-func registerHiddenPart(id, label, color string, params []Param, model func(Values) *geom.Mesh) {
+func registerHiddenPart(id, label, color string, params []Param, model func(Values) *geom.Mesh) *Kind {
 	k := &Kind{ID: id, Label: label, Color: color, Params: params, Hidden: true}
 	k.build = func(s geom.Vec3, v Values) *geom.Mesh { return cachedPart(id, v, model).FitTo(s) }
 	k.natural = func(v Values) geom.Vec3 { return cachedPart(id, v, model).Bounds().Size() }
 	k.Size = k.natural(k.Defaults())
 	register(k)
+	return k
+}
+
+// placedAsBuilt places part kind id where its model builds it: models of
+// an assembly's parts share one frame (the assembly's, origin at the
+// centre of its base), and a part's mesh is centred on its bounds.
+func placedAsBuilt(id, name, color string, v Values, model func(Values) *geom.Mesh, hole bool) Placed {
+	return Placed{Kind: id, Name: name, Color: color, M: geom.Translate(partCentre(id, v, model)), Hole: hole}
 }
 
 // --- project box ---------------------------------------------------------------------

@@ -20,6 +20,7 @@ const (
 	Number                     // numeric field with stepper (used for L/W/H)
 	TextParam                  // single-line text
 	FontParam                  // font dropdown
+	Choice                     // a dropdown of named options, stored as the option's index
 )
 
 // Param describes one inspector parameter.
@@ -34,6 +35,9 @@ type Param struct {
 	// units. Metric: a value in mm whatever the units (a metric standard,
 	// such as a thread's pitch or a gear's module), labelled so.
 	Length, Metric bool
+	// Options are a Choice's names, in order; the value is an index into
+	// them (Min 0, Max the last, whole numbers).
+	Options []string
 }
 
 // Kind is a catalogue entry.
@@ -54,6 +58,10 @@ type Kind struct {
 	Hidden bool
 	// sections are a profile kind's default point data (see Section).
 	sections []Section
+	// bends are a bent tube's default bend table (see Bend).
+	bends []Bend
+	// text is the default for a TextParam ("TEXT" when empty).
+	text string
 }
 
 // NaturalSize returns the shape's unscaled size for p, if it has one. The
@@ -73,6 +81,8 @@ type Values struct {
 	Font string
 	// Sections are an outline's or loft's point data (see Section).
 	Sections []Section
+	// Bends are a bent tube's bend table (see Bend).
+	Bends []Bend
 }
 
 // Get returns the value of parameter k, or def if it isn't set.
@@ -108,13 +118,16 @@ func All() []*Kind {
 
 // Defaults returns default parameter values for a kind.
 func (k *Kind) Defaults() Values {
-	v := Values{Num: map[string]float64{}, Sections: k.sections}
+	v := Values{Num: map[string]float64{}, Sections: k.sections, Bends: k.bends}
 	for _, p := range k.Params {
 		switch p.Kind {
-		case Slider:
+		case Slider, Choice:
 			v.Num[p.Key] = p.Default
 		case TextParam:
 			v.Text = "TEXT"
+			if k.text != "" {
+				v.Text = k.text
+			}
 		case FontParam:
 			v.Font = "Multilanguage"
 		}
@@ -138,7 +151,7 @@ func Build(id string, size geom.Vec3, v Values) *geom.Mesh {
 	}
 	sort.Strings(keys)
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s|%v|%v|%v|%q|%q|%s", k.ID, size.X, size.Y, size.Z, v.Text, v.Font, SectionsKey(v.Sections))
+	fmt.Fprintf(&sb, "%s|%v|%v|%v|%q|%q|%s|%s", k.ID, size.X, size.Y, size.Z, v.Text, v.Font, SectionsKey(v.Sections), BendsKey(v.Bends))
 	for _, kk := range keys {
 		fmt.Fprintf(&sb, "|%s=%v", kk, v.Num[kk])
 	}
@@ -157,7 +170,7 @@ func Build(id string, size geom.Vec3, v Values) *geom.Mesh {
 func (k *Kind) clamp(v Values) Values {
 	var out map[string]float64
 	for _, p := range k.Params {
-		if p.Kind != Slider {
+		if p.Kind != Slider && p.Kind != Choice {
 			continue
 		}
 		x, ok := v.Num[p.Key]
@@ -200,6 +213,12 @@ func sizeParams() []Param {
 
 func slider(key, label string, min, max, step, def float64, isInt bool) Param {
 	return Param{Key: key, Label: label, Kind: Slider, Min: min, Max: max, Step: step, Default: def, Int: isInt, SizeAxis: -1}
+}
+
+// choice is a dropdown of named options; def is the index of the default.
+func choice(key, label string, options []string, def int) Param {
+	return Param{Key: key, Label: label, Kind: Choice, Min: 0, Max: float64(len(options) - 1), Step: 1,
+		Default: float64(def), Int: true, SizeAxis: -1, Options: options}
 }
 
 // lslider is a slider for a length (see Param.Length).

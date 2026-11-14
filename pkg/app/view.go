@@ -456,6 +456,7 @@ func (a *App) drawScene() {
 	a.drawSplitPlane()
 	a.drawSectionPlane()
 	a.drawLayFace()
+	a.drawMarkedEdges()
 	// previews: hole hover, align/mirror ghosts, tile ghost
 	a.drawGhosts()
 	a.drawAlignExtent()

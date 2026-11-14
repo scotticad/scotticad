@@ -19,7 +19,7 @@ keyboard at the same time. A typical request goes like this:
 
 | | `scotticad --mcp` | `scotticad --mcp-connect 127.0.0.1:47800` |
 |---|---|---|
-| Who starts ScottiCAD | the assistant's client, when it needs it | you, with `scotticad --api 127.0.0.1:47800` |
+| Who starts ScottiCAD | the assistant's client, as its session starts | you, with `scotticad --api 127.0.0.1:47800` |
 | The window | a new one for each assistant session | the one you already have open |
 | When the assistant session ends | the window closes, asking to save changes first; cancel to keep it open | nothing changes: ScottiCAD stays open |
 | Good for | the simplest setup | keeping one window between sessions, or sharing it with your own scripts |
@@ -98,6 +98,7 @@ descriptions and parameters come from it. The main ones:
 | `add_shape`, `move`, `set_size`, `set_bounds`, `rotate`, `set_hole`, `set_color`, `group`, … | small direct edits |
 | `undo`, `redo` | the editor's undo and redo |
 | `fit_view`, `set_camera`, `set_section` | framing the screenshot, and cutting the design open to see inside |
+| `print_check` | before exporting: holes in the surface, parts floating or off the plate, pieces in mid-air, overhang area |
 | `new_design`, `open`, `save`, `import`, `export` | files |
 
 **Not available:** the API's simulated mouse and keyboard, the methods

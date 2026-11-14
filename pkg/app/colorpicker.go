@@ -112,7 +112,7 @@ func (a *App) setPickerHSV(h, s, v float64, live bool) {
 
 func (a *App) setPickerHex(hex string) {
 	if _, ok := geom.TryParseColor(hex); !ok {
-		a.showToast("not a colour: " + hex)
+		a.showToast("not a color: " + hex)
 		return
 	}
 	a.pickHex = "" // re-read HSV from the new colour
@@ -306,7 +306,7 @@ func (a *App) drawCustomColor(r render.Rect, cur string) {
 		ccol = colIconHover
 	}
 	b.TextCentered("Copy", cpr, fontUI, false, ccol)
-	a.button("color-copy", cpr, "Copy the colour code", "", tipBelow, func() {
+	a.button("color-copy", cpr, "Copy the color code", "", tipBelow, func() {
 		a.w.SetClipboard(hex)
 		a.showToast("Copied " + hex)
 	})

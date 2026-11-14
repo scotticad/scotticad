@@ -90,6 +90,7 @@ var Methods = []Method{
 	{Name: "set_text", API: "set_text", Params: []Param{p("id"), p("text"), d("font", nil)}, None: true},
 	{Name: "set_outline", API: "set_outline", Params: []Param{p("id"), p("points"), d("z0", nil), d("z1", nil)}, None: true},
 	{Name: "set_loft", API: "set_loft", Params: []Param{p("id"), p("sections")}, None: true},
+	{Name: "set_bends", API: "set_bends", Params: []Param{p("id"), p("bends")}, None: true},
 
 	// visibility
 	{Name: "hide", API: "hide", Params: []Param{ids}, None: true},
@@ -124,6 +125,7 @@ var Methods = []Method{
 	{Name: "attach_construction_plane", API: "attach_construction_plane", Params: []Param{p("id")}, None: true},
 	{Name: "set_tool", API: "set_tool", Params: []Param{p("tool")}, None: true},
 	{Name: "filament_estimate", API: "filament_estimate", Params: []Param{ids}},
+	{Name: "print_check", API: "print_check", Params: []Param{ids}},
 	{Name: "set_filament_settings", API: "set_filament_settings", Params: []Param{d("material", nil), d("density", nil), d("diameter", nil),
 		d("layer_height", nil), d("line_width", nil), d("walls", nil), d("top_layers", nil), d("bottom_layers", nil), d("infill", nil),
 		d("price_per_kg", nil), d("calibration", nil)}},

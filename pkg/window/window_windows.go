@@ -172,9 +172,14 @@ type Window struct {
 	// IgnoreInput drops real mouse/keyboard input (headless test runs,
 	// where simulated input is fed to the handler directly).
 	IgnoreInput bool
-	quit        bool
-	cursor      uintptr
-	tracking    bool
+	// PrivateClipboard keeps copy and paste inside this window, away from
+	// the system clipboard (headless test runs, which mustn't replace what
+	// the user has copied).
+	PrivateClipboard bool
+	privateClip      string
+	quit             bool
+	cursor           uintptr
+	tracking         bool
 }
 
 var current *Window
@@ -520,6 +525,10 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 // --- clipboard -----------------------------------------------------------
 
 func (w *Window) SetClipboard(s string) {
+	if w.PrivateClipboard {
+		w.privateClip = s
+		return
+	}
 	if r, _, _ := pOpenClipboard.Call(w.hwnd); r == 0 {
 		return
 	}
@@ -544,6 +553,9 @@ func (w *Window) SetClipboard(s string) {
 }
 
 func (w *Window) Clipboard() string {
+	if w.PrivateClipboard {
+		return w.privateClip
+	}
 	if r, _, _ := pOpenClipboard.Call(w.hwnd); r == 0 {
 		return ""
 	}

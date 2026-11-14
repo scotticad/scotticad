@@ -384,8 +384,17 @@ func (e *Editor) replace(d *doc.Document, path string) {
 		e.Replaced()
 	}
 	e.Path = path
-	e.Ruler = nil
-	e.Workplane = nil
+	// the file's ruler and construction plane; while editing the editor
+	// holds them (see doc.Document.Ruler)
+	e.Ruler, e.Workplane = nil, nil
+	if r := d.Ruler; r != nil && finiteVec(r.Origin) {
+		e.Ruler = &Ruler{Origin: r.Origin, Mid: r.Mid, Turns: ((r.Turns % 4) + 4) % 4}
+	}
+	if w := d.Workplane; w != nil && planeFrame(*w) {
+		f := *w
+		e.Workplane = &f
+	}
+	d.Ruler, d.Workplane = nil, nil
 	e.saved = e.snapshot()
 	e.changed()
 }
@@ -400,7 +409,7 @@ func (e *Editor) Save(path string) error {
 	if filepath.Ext(path) == "" {
 		path += ".scotticad"
 	}
-	b, err := e.Doc.Marshal()
+	b, err := e.FileDoc().Marshal()
 	if err != nil {
 		return err
 	}
@@ -413,6 +422,48 @@ func (e *Editor) Save(path string) error {
 	e.saved = e.snapshot()
 	e.changed()
 	return nil
+}
+
+// FileDoc is the design as a file holds it: the document plus the ruler
+// and construction plane. It shares the document's nodes; don't change it.
+func (e *Editor) FileDoc() *doc.Document {
+	d := *e.Doc
+	if r := e.Ruler; r != nil {
+		d.Ruler = &doc.Ruler{Origin: r.Origin, Mid: r.Mid, Turns: r.Turns}
+	}
+	if w := e.Workplane; w != nil {
+		f := *w
+		d.Workplane = &f
+	}
+	return &d
+}
+
+func finiteVec(v geom.Vec3) bool {
+	return !math.IsNaN(v.X+v.Y+v.Z) && !math.IsInf(v.X+v.Y+v.Z, 0)
+}
+
+func finiteMat(m geom.Mat4) bool {
+	for _, v := range m {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// planeFrame reports whether m can be a construction plane as ShapeFrame
+// makes them: finite, unit axes that aren't flat or mirrored, and no
+// projective row. A hand-edited file can hold anything.
+func planeFrame(m geom.Mat4) bool {
+	if !finiteMat(m) || m[3] != 0 || m[7] != 0 || m[11] != 0 || m[15] != 1 {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		if math.Abs(m.Col(i).Len()-1) > 1e-6 {
+			return false
+		}
+	}
+	return m.Det3() > 1e-6
 }
 
 // --- undo ------------------------------------------------------------------
@@ -617,6 +668,25 @@ func (e *Editor) SetSections(id int, ss []shapes.Section) error {
 		return err // before edit: a refused change leaves no undo step
 	}
 	return e.edit(func() error { return doc.SetSections(n, ss) })
+}
+
+// SetBends replaces a bent tube's bend table (see doc.SetBends): one undo
+// step, or none if the table is refused.
+func (e *Editor) SetBends(id int, bs []shapes.Bend) error {
+	n := e.Doc.FindAny(id)
+	if n == nil {
+		return fmt.Errorf("no node %d", id)
+	}
+	if !shapes.IsTube(n.Kind) {
+		return fmt.Errorf("node %d is not a bent tube", id)
+	}
+	if e.locked(id) {
+		return errLocked
+	}
+	if err := shapes.CheckBends(bs); err != nil {
+		return err
+	}
+	return e.edit(func() error { return doc.SetBends(n, bs) })
 }
 
 // HoleColor is the grey of a hole being placed from the library. Holes keep
@@ -922,7 +992,7 @@ func (e *Editor) SetColorLive(hex string) {
 
 func (e *Editor) SetColor(hex string) error {
 	if _, ok := geom.TryParseColor(hex); !ok {
-		return fmt.Errorf("bad colour %q", hex)
+		return fmt.Errorf("bad color %q", hex)
 	}
 	return e.edit(func() error { e.paint(hex); return nil })
 }
@@ -969,6 +1039,20 @@ func (e *Editor) SetName(name string) {
 		for _, n := range e.Selected() {
 			n.Name = name
 		}
+		return nil
+	})
+}
+
+// Rename names the top-level shape id; an empty name gives it back its
+// kind's name (Box, Union, ...). Unlike SetName it doesn't go by the
+// selection, which may have changed by the time a typed name is entered.
+func (e *Editor) Rename(id int, name string) error {
+	n := e.Doc.Find(id)
+	if n == nil {
+		return fmt.Errorf("no shape %d", id)
+	}
+	return e.edit(func() error { // a locked shape too, as SetName: a lock holds it in place
+		n.Name = strings.TrimSpace(name)
 		return nil
 	})
 }
@@ -1343,8 +1427,10 @@ func (e *Editor) setParam(id int, key string, v float64) error {
 		}
 		return nil
 	}
-	if shapes.IsProfile(n.Kind) {
-		doc.SetProfileParam(n, key, v) // its points stay where they are
+	if shapes.HasFrame(n.Kind) {
+		// its points (a bent tube's centreline) stay where they are, so a
+		// tube's ends stay on what they were joined to
+		doc.SetProfileParam(n, key, v)
 		return nil
 	}
 	bottom := n.M.Point(geom.V(0, 0, -n.Size.Z/2))
@@ -1367,28 +1453,84 @@ func (e *Editor) setParam(id int, key string, v float64) error {
 	return nil
 }
 
+// SetText changes the text (and, for the Text shape, the font) of a shape
+// with a text setting: the Text shape or a QR code (an assembly, or one
+// of its parts).
 func (e *Editor) SetText(id int, text, font string) error {
 	n := e.Doc.FindAny(id)
-	if n == nil || n.Kind != "text" {
-		return fmt.Errorf("node %d is not text", id)
+	if n == nil || !hasText(n) {
+		return fmt.Errorf("node %d has no text", id)
 	}
 	if e.locked(id) {
 		return errLocked
 	}
+	if err := shapes.CheckText(textKind(n), text); err != nil {
+		return err
+	}
 	if font == "" {
 		font = n.Font
 	}
-	return e.edit(func() error { doc.SetText(n, text, font); return nil })
+	return e.edit(func() error { return e.setText(n, text, font) })
 }
 
-// SetTextLive updates text without an undo step (typing in the field).
-func (e *Editor) SetTextLive(n *doc.Node, text, font string) {
+// SetTextLive updates text without an undo step (typing in the field). A
+// text the shape can't take (too long for a QR code) is refused, with why.
+func (e *Editor) SetTextLive(n *doc.Node, text, font string) error {
 	e.Version++
 	if e.locked(n.ID) {
-		return
+		return errLocked
 	}
-	doc.SetText(n, text, font)
+	if err := shapes.CheckText(textKind(n), text); err != nil {
+		return err
+	}
+	err := e.setText(n, text, font)
 	e.changed()
+	return err
+}
+
+func (e *Editor) setText(n *doc.Node, text, font string) error {
+	switch {
+	case n.Kind == "text":
+		doc.SetText(n, text, font)
+	case n.IsGroup():
+		return e.Doc.SetAssemblyText(n, text)
+	default:
+		// a part on its own (an ungrouped QR code): its size follows what
+		// the new text makes, keeping the shape's scale, as a setting does
+		k, _ := shapes.Lookup(n.Kind)
+		before, has := k.NaturalSize(n.Values())
+		n.Text = text
+		if after, _ := k.NaturalSize(n.Values()); has {
+			for i := 0; i < 3; i++ {
+				if b := before.Axis(i); b > 1e-9 {
+					n.Size = n.Size.WithAxis(i, n.Size.Axis(i)*after.Axis(i)/b)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// textKind is the kind whose settings n has: an assembly's own kind.
+func textKind(n *doc.Node) string {
+	if n.IsGroup() && n.Assembly != "" {
+		return n.Assembly
+	}
+	return n.Kind
+}
+
+// hasText reports whether n's kind has a text setting.
+func hasText(n *doc.Node) bool {
+	k, ok := shapes.Lookup(textKind(n))
+	if !ok || n.IsGroup() && n.Assembly == "" {
+		return false
+	}
+	for _, p := range k.Params {
+		if p.Kind == shapes.TextParam {
+			return true
+		}
+	}
+	return false
 }
 
 // --- settings ----------------------------------------------------------------

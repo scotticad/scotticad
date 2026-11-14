@@ -275,6 +275,25 @@ class Session:
         else:
             self.call(self.cad.filament_estimate)
 
+    def op_tube(self):
+        """A bent tube placed or its bend table changed (to tables it must
+        refuse, too), or the print check of what is there."""
+        tubes = [n["id"] for n in self.cad.nodes() if n["kind"] == "benttube"]
+        f = self.rnd.random()
+        if f < 0.25 or (f < 0.75 and not tubes):
+            self.call(self.cad.add_shape, "benttube", x=self.rnd.uniform(-80, 80), y=self.rnd.uniform(-80, 80))
+        elif f < 0.75:
+            rows = [(self.rnd.choice([0, 0.5, 5, 20, 60]), self.rnd.choice([0, 0, 45, 90, -90, 135, 180, 200]),
+                     self.rnd.choice([0, 0, 90, -45, 180, 400])) for _ in range(self.rnd.randint(0, 6))]
+            self.call(self.cad.set_bends, self.rnd.choice(tubes), rows)
+        else:
+            r = self.call(self.cad.print_check, ids=self.some_ids() if self.rnd.random() < 0.5 else None)
+            for p in (r or {}).get("parts", []):
+                assert p["status"] in ("ok", "note", "warning"), p
+                assert (p["status"] == "ok") == (not p["findings"]), p
+                for finding in p["findings"]:
+                    assert finding["message"] and finding["tip"] and finding["severity"] in ("note", "warning"), p
+
     def op_script(self):
         src = self.rnd.choice(SCRIPTS)
         if "%d" in src:
@@ -354,7 +373,7 @@ class Session:
 
     OPS = [(op_add, 14), (op_select, 10), (op_transform, 14), (op_group, 8), (op_appearance, 10), (op_notes, 4),
            (op_history, 10), (op_gui_drag, 10), (op_gui_click, 8), (op_key, 10), (op_tool, 8), (op_settings, 5),
-           (op_script, 4), (op_file, 2), (op_export, 2), (op_interleave, 5)]
+           (op_script, 4), (op_file, 2), (op_export, 2), (op_interleave, 5), (op_tube, 5)]
 
     def step(self):
         total = sum(w for _, w in self.OPS)

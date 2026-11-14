@@ -42,7 +42,11 @@ type Window struct {
 	// IgnoreInput drops real mouse/keyboard input (headless test runs,
 	// where simulated input is fed to the handler directly).
 	IgnoreInput bool
-	quit        bool
+	// PrivateClipboard keeps copy and paste inside this window, away from
+	// the system clipboard (headless test runs, which mustn't replace what
+	// the user has copied).
+	PrivateClipboard bool
+	quit             bool
 
 	wake     [2]int // a pipe: Wake writes, the loop wakes on it
 	buttons  uint32 // mouse buttons held (bit per Left/Right/Middle)
@@ -676,6 +680,9 @@ func keysymToRune(s uint64) rune {
 
 func (w *Window) SetClipboard(s string) {
 	w.clip = strings.ReplaceAll(s, "\x00", "")
+	if w.PrivateClipboard {
+		return
+	}
 	xSetSelectionOwner(w.d, w.atom("CLIPBOARD"), w.xwin, 0)
 	xFlush(w.d)
 }
@@ -683,6 +690,9 @@ func (w *Window) SetClipboard(s string) {
 // Clipboard is the CLIPBOARD selection's text: ours if we own it, else
 // asked of the program that does (waiting up to two seconds for it).
 func (w *Window) Clipboard() string {
+	if w.PrivateClipboard {
+		return w.clip
+	}
 	sel := w.atom("CLIPBOARD")
 	owner := xGetSelectionOwner(w.d, sel)
 	switch owner {

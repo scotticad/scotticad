@@ -536,8 +536,8 @@ func UnionAll(ms []*Mesh) *Mesh {
 // vertices' coordinates on it (which it reorders): in the gap nearest
 // their median that is wide enough (4*csgEps) for the plane to pass no
 // vertex closely, as gapNearMedianSorted finds it. A plane passing close
-// by a vertex cuts
-// slivers whose new corners are near-duplicates of old ones.
+// by a vertex cuts slivers whose new corners are near-duplicates of old
+// ones.
 //
 // It sorts only what the search needs, not every coordinate: the median
 // is selected, then the coordinates nearest it on each side are sorted, a

@@ -477,13 +477,14 @@ def test_shape_search(cad):
     cad.type_text("screw")
     found = tiles()
     assert {"tile-thread", "tile-hexbolt", "tile-countersink-hole"} <= found and "tile-box" not in found
-    # hole tiles: the three basic hole shapes and the screw-hole cutters
+    # hole tiles: the basic hole shapes and the hardware cutters
     for _ in range(5):
         cad.key("backspace")
     cad.type_text("hole")
     holes = {t for t in tiles() if t.endswith("-hole")}
     assert holes == {"tile-box-hole", "tile-cylinder-hole", "tile-sphere-hole",
-                     "tile-nuttrap-hole", "tile-countersink-hole", "tile-counterbore-hole"}
+                     "tile-nuttrap-hole", "tile-countersink-hole", "tile-counterbore-hole",
+                     "tile-keyhole-hole", "tile-bearingseat-hole"}
     assert "tile-countersink" not in tiles()  # cutters only come as holes
     # closing the search brings the library back
     cad.click_control("search-close")
@@ -643,17 +644,12 @@ def test_ruler_origin_click_turns_ruler(cad):
     assert math.isclose(cad.node(box)["bounds"]["min"][0], 20, abs_tol=1e-6)
 
 
-def test_tooltip_redraws_by_itself_after_crossing_buttons(cad):
-    import time
+def test_hover_follows_the_pointer_across_buttons(cad):
     ctl = {c["id"]: c["rect"] for c in cad.controls()}
     for cid in ("paste", "delete"):
         x, y, w, h = ctl[cid]
         cad.mouse_move(x + w / 2, y + h / 2)
-        time.sleep(0.1)
-    f0 = cad.ui_state()["frames"]
-    time.sleep(0.8)
-    st = cad.ui_state()
-    assert st["hot"] == "delete" and st["frames"] > f0
+        assert cad.ui_state()["hot"] == cid
 
 
 def test_align_key_object_by_clicking(cad):

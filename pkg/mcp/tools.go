@@ -28,7 +28,7 @@ var toolSet = map[string]int{
 	"get_state": full, "list_nodes": core, "get_node": core, "shape_kinds": full,
 	"version": never, "fonts": full,
 	// creation
-	"add_shape": core, "add_outline": full, "add_loft": full, "set_outline": full, "set_loft": full,
+	"add_shape": core, "add_outline": full, "add_loft": full, "set_outline": full, "set_loft": full, "set_bends": full,
 	// notes
 	"add_note": never, "notes": never, "set_note_text": never, "delete_note": never,
 	// import and export
@@ -49,7 +49,7 @@ var toolSet = map[string]int{
 	// split, lay flat and section view
 	"split": full, "lay_flat": full, "set_section": full,
 	// filament
-	"filament_estimate": full, "set_filament_settings": full,
+	"filament_estimate": full, "set_filament_settings": full, "print_check": core,
 	// clipboard and undo
 	"duplicate": full, "copy": never, "cut": never, "paste": never, "delete": core,
 	"undo": core, "redo": core,
@@ -77,7 +77,7 @@ var toolSet = map[string]int{
 var (
 	readOnly = map[string]bool{"get_document": true, "get_state": true, "list_nodes": true, "get_node": true,
 		"shape_kinds": true, "fonts": true, "get_selection": true, "get_camera": true,
-		"filament_estimate": true, "screenshot": true}
+		"filament_estimate": true, "print_check": true, "screenshot": true}
 	destructive = map[string]bool{"new_design": true, "open": true, "save": true, "export": true, "delete": true}
 )
 
@@ -104,7 +104,8 @@ var schemas = map[string]map[string]any{
 		map[string]any{"type": "array", "items": point2},
 		map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": point2}},
 	}},
-	"[z, float[][2]][]": {"type": "array", "items": map[string]any{"type": "array", "minItems": 2, "maxItems": 2}},
+	"[z, float[][2]][]":       {"type": "array", "items": map[string]any{"type": "array", "minItems": 2, "maxItems": 2}},
+	"[length, angle, turn][]": {"type": "array", "minItems": 1, "items": map[string]any{"type": "array", "items": map[string]any{"type": "number"}, "minItems": 1, "maxItems": 3}},
 }
 
 var point2 = map[string]any{"type": "array", "items": map[string]any{"type": "number"}, "minItems": 2, "maxItems": 2}
@@ -323,7 +324,7 @@ type resource struct {
 var resourceList = []resource{
 	{"scotticad://script-api", "Script reference", "Every cad method scripts (run_script) can call, with its parameters.", "text/markdown"},
 	{"scotticad://design", "The open design", "The design open in ScottiCAD, as its native JSON.", "application/json"},
-	{"scotticad://shape-kinds", "Shape catalogue", "Every shape kind add_shape takes, with its parameters.", "application/json"},
+	{"scotticad://shape-kinds", "Shape catalog", "Every shape kind add_shape takes, with its parameters.", "application/json"},
 }
 
 func (s *server) readResource(uri string) (any, error) {
@@ -368,7 +369,7 @@ func (s *server) scriptAPI() (string, error) {
 	var b strings.Builder
 	b.WriteString("# ScottiCAD scripts: the cad methods\n\n")
 	b.WriteString("Scripts are Starlark, a dialect of Python: functions, loops, lists, dicts and comprehensions as in Python; no classes, try/except or import. math, json and struct are built in, and print writes to the output.\n\n")
-	b.WriteString("Lengths are millimetres and angles degrees; Z is up and the build plate is Z = 0. Methods that act on the selection also take ids, a list of node ids: pass them. \"The current plane\" is the construction plane if one is placed, otherwise the build plate.\n\n")
+	b.WriteString("Lengths are millimeters and angles degrees; Z is up and the build plate is Z = 0. Methods that act on the selection also take ids, a list of node ids: pass them. \"The current plane\" is the construction plane if one is placed, otherwise the build plate.\n\n")
 	for i := range sms {
 		fmt.Fprintf(&b, "- `cad.%s`", script.Signature(&sms[i]))
 		if d := docs[sms[i].API]; d != "" {
@@ -381,11 +382,12 @@ func (s *server) scriptAPI() (string, error) {
 }
 
 // instructions go to the assistant with initialize.
-const instructions = `ScottiCAD is a CAD program for 3D printing, open in a window the user can see and use while you work. Lengths are millimetres and angles degrees; Z is up and the build plate is Z = 0.
+const instructions = `ScottiCAD is a CAD program for 3D printing, open in a window the user can see and use while you work. Lengths are millimeters and angles degrees; Z is up and the build plate is Z = 0.
 
 - To build anything with more than a few shapes, or anything repeated or calculated, write a Starlark script and run it with run_script: one call, and one undo step. Keep the sizes as named constants at the top. The cad reference is the resource scotticad://script-api.
 - Use the other tools to look at a design (list_nodes, get_node) and for small edits to shapes already there.
 - Pass ids rather than relying on the selection: the user may be working in the same window and can change it under you. For the same reason, list the nodes again after the user has made changes.
 - After a change, take a screenshot to check it: fit_view or set_camera frame it, and set_section shows the inside.
+- Before exporting, call print_check and fix the warnings it reports (notes need nothing done).
 - Holes are shapes made with hole=True (or set_hole), cut out when grouped with solid shapes. Make a hole for a part that fits into it 0.2 to 0.4 mm bigger, to allow for printing.
 - Don't save over the user's file unless asked: save to a new path.`

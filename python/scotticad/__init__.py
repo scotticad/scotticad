@@ -14,7 +14,7 @@ on-screen controls.
         g = cad.group("union")
         cad.export("part.stl")
 
-All lengths are millimetres; angles are degrees. Methods that act on "the
+All lengths are millimeters; angles are degrees. Methods that act on "the
 selection" also accept ``ids=[...]``. "The current plane" is the
 construction plane, if one is placed, otherwise the build plate.
 """
@@ -64,7 +64,14 @@ class Client:
         with self._lock:
             rid = self._next
             self._next += 1
-            msg = json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+            try:
+                # JSON has no NaN or infinity: sent, ScottiCAD couldn't read
+                # the request and would hang up
+                msg = json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params}, allow_nan=False)
+            except ValueError:
+                raise ScottiCADError(f"{method}: a number in the parameters is NaN or infinite") from None
+            if self._file.closed:
+                raise ConnectionError(f"{method}: the connection to ScottiCAD is closed")
             try:
                 self._file.write(msg.encode("utf-8") + b"\n")
                 self._file.flush()
@@ -89,11 +96,12 @@ class Client:
         return resp.get("result")
 
     def close(self) -> None:
-        try:
-            self._file.close()
-            self._sock.close()
-        except OSError:
-            pass
+        """Disconnect; a ScottiCAD this client didn't launch keeps running."""
+        for f in (self._file.close, self._sock.close):
+            try:
+                f()
+            except OSError:
+                pass
 
     def __enter__(self) -> "Client":
         return self
@@ -108,6 +116,7 @@ class Client:
                 self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+                self.process.wait()
         self.close()
 
     # -- design files ------------------------------------------------------
@@ -148,14 +157,14 @@ class Client:
     # -- creation ----------------------------------------------------------
 
     def add_shape(self, kind: str, x: float = 0, y: float = 0, z: Optional[float] = None, hole: bool = False) -> int:
-        """Place a shape with its bottom centre at (x, y, z); returns its id."""
+        """Place a shape with its bottom center at (x, y, z); returns its id."""
         return self.call("add_shape", kind=kind, x=x, y=y, z=z, hole=hole)["id"]
 
     def add_outline(self, points: Sequence, z0: float = 0, z1: float = 10, hole: bool = False) -> int:
         """Extrude a closed outline straight up from z0 to z1; returns its id.
 
         ``points`` is ``[(x, y), ...]``, or a list of such outlines (ones
-        inside others are holes). Points are world millimetres: the shape
+        inside others are holes). Points are world millimeters: the shape
         lands exactly where they say. Set the shape's ``smooth`` parameter
         (:meth:`set_param`) to make each outline a curve through its points
         (a point given twice in a row is a sharp corner)."""
@@ -168,7 +177,7 @@ class Client:
         ``sections`` is ``[(z, [(x, y), ...]), ...]``: at least two, z
         rising, one outline each. Outlines with the same number of points
         are joined point to point; others by position along their length.
-        Points are world millimetres."""
+        Points are world millimeters."""
         return self.call("add_loft", sections=sections, hole=hole)["id"]
 
     def import_file(self, path: str, x: float = 0, y: float = 0, scale: float = 1.0,
@@ -269,6 +278,13 @@ class Client:
         own frame."""
         self.call("set_loft", id=id, sections=sections)
 
+    def set_bends(self, id: int, bends: Sequence) -> None:
+        """Replace a bent tube's bend table: rows of (length, angle, turn),
+        turn optional. Each row is a straight run in mm, then a bend in
+        degrees (negative the other way), its plane first turned about the
+        tube. The tube's start stays where it was."""
+        self.call("set_bends", id=id, bends=bends)
+
     # -- visibility --------------------------------------------------------
 
     def hide(self, ids: Optional[Sequence[int]] = None) -> None:
@@ -295,7 +311,7 @@ class Client:
     def split(self, axis: str, at: Optional[float] = None, keep: str = "both", gap: float = 0,
               ids: Optional[Sequence[int]] = None) -> list:
         """Cut shapes with a plane square to an axis ("x", "y" or "z") of the
-        current plane, at `at` mm along it (default: the selection's centre). keep:
+        current plane, at `at` mm along it (default: the selection's center). keep:
         "both", "above" or "below" (the + or - side). gap moves the half
         above that far away; the one below stays. Each half is a group of
         the shape and a hole box; returns the halves' ids."""
@@ -375,6 +391,13 @@ class Client:
         Supports, brims and purge aren't included."""
         return self.call("filament_estimate", ids=_ids(ids))
 
+    def print_check(self, ids: Optional[Sequence[int]] = None) -> dict:
+        """Check that the selection (or ids, or the whole design) will reach
+        the slicer as clean solids on the plate. Returns pending and parts:
+        per part id, name, status (ok, note or warning) and findings, each
+        with kind, severity, message and tip."""
+        return self.call("print_check", ids=_ids(ids))
+
     def set_filament_settings(self, material: Optional[str] = None, density: Optional[float] = None,
                               diameter: Optional[float] = None, layer_height: Optional[float] = None,
                               line_width: Optional[float] = None, walls: Optional[int] = None,
@@ -413,7 +436,7 @@ class Client:
 
     def set_camera(self, target: Optional[Sequence[float]] = None, yaw: Optional[float] = None,
                    pitch: Optional[float] = None, dist: Optional[float] = None, ortho: Optional[bool] = None) -> None:
-        self.call("set_camera", target=list(target) if target else None, yaw=yaw, pitch=pitch, dist=dist, ortho=ortho)
+        self.call("set_camera", target=None if target is None else list(target), yaw=yaw, pitch=pitch, dist=dist, ortho=ortho)
 
     def home_view(self) -> None:
         self.call("home_view")
@@ -437,7 +460,8 @@ class Client:
         return self.call("get_ui_state")
 
     def controls(self) -> list:
-        """Every clickable control on screen: id, rect, tooltip."""
+        """Every clickable control on screen: id, rect [x, y, w, h], tip
+        (its tooltip) and key (its shortcut)."""
         return self.call("list_controls")
 
     def handles(self) -> list:
@@ -530,7 +554,9 @@ def launch(exe: Optional[str] = None, headless: bool = True, width: int = 1600, 
            design: Optional[str] = None, timeout: float = 30.0, scale: Optional[float] = None) -> Client:
     """Start ScottiCAD with the API on a free port and connect to it.
 
-    Use as a context manager; leaving the block quits ScottiCAD.
+    Use as a context manager; leaving the block quits ScottiCAD. If it
+    hasn't started its API within ``timeout`` seconds, it is stopped and
+    RuntimeError is raised with what it printed.
     """
     cmd = [exe or default_exe(), "--api", "127.0.0.1:0", f"--width={width}", f"--height={height}"]
     if headless:
@@ -542,27 +568,39 @@ def launch(exe: Optional[str] = None, headless: bool = True, width: int = 1600, 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             encoding="utf-8", errors="replace")
     port: list = []
+    started = threading.Event()
+    err: list = []
 
-    def read() -> None:
+    # Both pipes are read from the start and for as long as ScottiCAD runs:
+    # a full pipe would stop it in its tracks.
+    def read_stdout() -> None:
         assert proc.stdout is not None
         for line in proc.stdout:
-            if line.startswith("SCOTTICAD_API "):
+            if not port and line.startswith("SCOTTICAD_API "):
                 port.append(int(line.split()[1].rsplit(":", 1)[1]))
-                return
+                started.set()
+        started.set()  # it ended without starting the API
 
-    t = threading.Thread(target=read, daemon=True)
-    t.start()
-    t.join(timeout)
-    if not port:
+    def read_stderr() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            if len(err) < 200:  # enough to say why it didn't start
+                err.append(line)
+
+    threading.Thread(target=read_stdout, daemon=True).start()
+    err_reader = threading.Thread(target=read_stderr, daemon=True)
+    err_reader.start()
+    started.wait(timeout)
+    try:
+        if not port:
+            proc.kill()
+            proc.wait()
+            err_reader.join(2)  # the rest of what it said
+            raise RuntimeError(f"ScottiCAD did not start: {''.join(err).strip()}")
+        c = Client(port=port[0])
+    except BaseException:
         proc.kill()
-        err = proc.stderr.read() if proc.stderr else ""
-        raise RuntimeError(f"ScottiCAD did not start: {err.strip()}")
-    # keep draining its output: a full pipe would stop it in its tracks
-    def drain(s: Any) -> None:
-        while s.read(65536):
-            pass
-    for stream in (proc.stdout, proc.stderr):
-        threading.Thread(target=drain, args=(stream,), daemon=True).start()
-    c = Client(port=port[0])
+        proc.wait()
+        raise
     c.process = proc
     return c

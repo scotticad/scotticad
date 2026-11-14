@@ -144,7 +144,7 @@ reference is made from: every method with its parameters.
 ## Methods
 
 - **Design files**: [`describe`](#describe), [`new_design`](#new_design), [`open`](#open), [`save`](#save), [`get_document`](#get_document), [`get_state`](#get_state), [`list_nodes`](#list_nodes), [`get_node`](#get_node), [`shape_kinds`](#shape_kinds), [`version`](#version), [`fonts`](#fonts)
-- **Creation**: [`add_shape`](#add_shape), [`add_outline`](#add_outline), [`add_loft`](#add_loft), [`set_outline`](#set_outline), [`set_loft`](#set_loft)
+- **Creation**: [`add_shape`](#add_shape), [`add_outline`](#add_outline), [`add_loft`](#add_loft), [`set_outline`](#set_outline), [`set_loft`](#set_loft), [`set_bends`](#set_bends)
 - **Notes**: [`add_note`](#add_note), [`notes`](#notes), [`set_note_text`](#set_note_text), [`delete_note`](#delete_note)
 - **Import and export**: [`import`](#import), [`export`](#export)
 - **Selection**: [`select`](#select), [`add_to_selection`](#add_to_selection), [`select_all`](#select_all), [`clear_selection`](#clear_selection), [`get_selection`](#get_selection)
@@ -153,7 +153,7 @@ reference is made from: every method with its parameters.
 - **Visibility**: [`hide`](#hide), [`toggle_hidden`](#toggle_hidden), [`show_all`](#show_all)
 - **Grouping**: [`group`](#group), [`ungroup`](#ungroup), [`set_group_mode`](#set_group_mode)
 - **Split, lay flat and section view**: [`split`](#split), [`lay_flat`](#lay_flat), [`set_section`](#set_section)
-- **Filament**: [`filament_estimate`](#filament_estimate), [`set_filament_settings`](#set_filament_settings)
+- **Filament**: [`filament_estimate`](#filament_estimate), [`print_check`](#print_check), [`set_filament_settings`](#set_filament_settings)
 - **Clipboard and undo**: [`duplicate`](#duplicate), [`copy`](#copy), [`cut`](#cut), [`paste`](#paste), [`delete`](#delete), [`undo`](#undo), [`redo`](#redo)
 - **Settings and tools**: [`set_units`](#set_units), [`set_snap`](#set_snap), [`set_build_plate`](#set_build_plate), [`set_settings`](#set_settings), [`place_ruler`](#place_ruler), [`remove_ruler`](#remove_ruler), [`toggle_construction_plane`](#toggle_construction_plane), [`attach_construction_plane`](#attach_construction_plane), [`set_tool`](#set_tool)
 - **Camera and output**: [`get_camera`](#get_camera), [`set_camera`](#set_camera), [`home_view`](#home_view), [`fit_view`](#fit_view), [`screenshot`](#screenshot), [`project`](#project), [`get_ui_state`](#get_ui_state), [`list_controls`](#list_controls), [`list_handles`](#list_handles), [`click_control`](#click_control)
@@ -229,7 +229,7 @@ Python: `cad.node(id)`
 
 #### `shape_kinds`
 
-The shape catalogue with parameters.
+The shape catalog with parameters.
 
 Python: `cad.shape_kinds()`
 
@@ -249,7 +249,7 @@ Python: `cad.fonts()`
 
 #### `add_shape`
 
-Place a catalogue shape with its bottom centre at (x, y, z); selects it.
+Place a catalog shape with its bottom center at (x, y, z); selects it.
 
 Python: `cad.add_shape(kind, x=0, y=0, z=None, hole=False)` returns the reply's `id`
 
@@ -308,6 +308,17 @@ Python: `cad.set_loft(id, sections)` returns nothing
 |---|---|---|---|
 | `id` | int | required | node id (any depth) |
 | `sections` | [z, float[][2]][] | required | as add_loft |
+
+#### `set_bends`
+
+Replace a bent tube's bend table: each row a straight length (mm), then a bend (degrees, negative the other way) whose plane is first turned about the tube (degrees). The tube's start stays where it was.
+
+Python: `cad.set_bends(id, bends)` returns nothing
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `id` | int | required | node id (any depth) |
+| `bends` | [length, angle, turn][] | required | [[length, angle, turn], ...] (turn may be left out), or [{length, angle, turn}, ...] |
 
 ### Notes
 
@@ -453,7 +464,7 @@ Python: `cad.set_position(x=None, y=None, z=None, anchor="min", ids=None)` retur
 
 #### `set_size`
 
-Resize the bounding box (mm); omitted axes keep their size. X/Y stay centred, Z keeps the base.
+Resize the bounding box (mm); omitted axes keep their size. X/Y stay centered, Z keeps the base.
 
 Python: `cad.set_size(x=None, y=None, z=None, uniform=False, ids=None)` returns nothing
 
@@ -479,19 +490,19 @@ Python: `cad.set_bounds(min, max, ids=None)` returns nothing
 
 #### `rotate`
 
-Rotate about a world axis through the selection centre.
+Rotate about a world axis through the selection center. The editor's rotation handles show the opposite sign: a turn counter-clockwise seen from above, +90 here, reads as -90° on the protractor.
 
 Python: `cad.rotate(axis, degrees, ids=None)` returns nothing
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
 | `axis` | axis | required | x, y or z |
-| `degrees` | float | required | positive = counter-clockwise looking down the axis |
+| `degrees` | float | required | positive = counter-clockwise seen from the axis's positive end (for z, from above) |
 | `ids` | int[] | optional | top-level node ids; defaults to the selection |
 
 #### `mirror`
 
-Mirror the selection about its centre.
+Mirror the selection about its center.
 
 Python: `cad.mirror(axis, ids=None)` returns nothing
 
@@ -549,7 +560,7 @@ Python: `cad.set_hole(hole=True, ids=None)` returns nothing
 
 #### `set_color`
 
-Set colour (#rrggbb); makes the shapes solid.
+Set color (#rrggbb); makes the shapes solid.
 
 Python: `cad.set_color(color, ids=None)` returns nothing
 
@@ -571,7 +582,7 @@ Python: `cad.set_transparent(on=True, ids=None)` returns nothing
 
 #### `set_multicolor`
 
-Union groups: keep each child's colour.
+Union groups: keep each child's color.
 
 Python: `cad.set_multicolor(on=True, ids=None)` returns nothing
 
@@ -604,7 +615,7 @@ Python: `cad.set_name(name, ids=None)` returns nothing
 
 #### `set_param`
 
-Set a shape parameter (see shape_kinds).
+Set a shape parameter (see shape_kinds). A choice (a dropdown, such as a bearing seat's bearing) is set by its option's index in shape_kinds' options.
 
 Python: `cad.set_param(id, key, value)` returns nothing
 
@@ -616,7 +627,7 @@ Python: `cad.set_param(id, key, value)` returns nothing
 
 #### `set_text`
 
-Change a text shape's string and/or font.
+Change a text shape's string and/or font, or a QR code's text.
 
 Python: `cad.set_text(id, text, font=None)` returns nothing
 
@@ -664,7 +675,7 @@ Python: `cad.group(mode="union", ids=None)` returns the reply's `id`
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
-| `mode` | string | optional | "union" (default) or "bundle" |
+| `mode` | string | optional | "union" (default), "bundle" or "intersect" |
 | `ids` | int[] | optional | top-level node ids; defaults to the selection |
 
 #### `ungroup`
@@ -699,7 +710,7 @@ Python: `cad.split(axis, at=None, keep="both", gap=0, ids=None)` returns the rep
 | Parameter | Type | | Meaning |
 |---|---|---|---|
 | `axis` | axis | required | x, y or z (the current plane's) |
-| `at` | float | optional | where along the axis, mm; default: the selection's centre |
+| `at` | float | optional | where along the axis, mm; default: the selection's center |
 | `keep` | string | optional | both, above or below (the + or - side of the axis) |
 | `gap` | float | optional | mm to move the half above (+ side) away; the one below stays |
 | `ids` | int[] | optional | top-level node ids; defaults to the selection |
@@ -734,9 +745,19 @@ Python: `cad.set_section(on=True, axis=None, at=None, keep=None, pin=None, ids=N
 
 #### `filament_estimate`
 
-Estimate the filament the selection (or ids, or the whole design) takes: grams, metres, cost, and per colour. Supports, brims and purge aren't included.
+Estimate the filament the selection (or ids, or the whole design) takes: grams, meters, cost, and per color. Supports, brims and purge aren't included.
 
 Python: `cad.filament_estimate(ids=None)`
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `ids` | int[] | optional | top-level node ids; defaults to the selection |
+
+#### `print_check`
+
+Check that the selection (or ids, or the whole design) will reach the slicer as clean solids on the plate: holes or cracks in the surface (as exported), faces inside out, parts floating, sunk into or off the plate, pieces in mid-air. Per part: status (ok, note or warning); findings, each with a message (lengths in the design's units) and what to do (notes need nothing done), and its numbers in mm (gap, height); and overhang_area, the mm² of faces leaning out more than 45° from upright, facing down and resting on nothing, which may need support (information, never a finding).
+
+Python: `cad.print_check(ids=None)`
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
@@ -961,7 +982,7 @@ Python: `cad.project(x, y, z)`
 
 #### `get_ui_state`
 
-Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; the center of rotation's marker (where it is drawn, and its setting); in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.
+Tool mode, open popup, hover, active field, banner and toast; the file an export from the Export dialog is writing in the background; the scale and font atlas; the section; the filament panel's print check lines (while it is open), and how many problem edges a click on one marked in the view (marked_edges, while they're shown); in the Export dialog, how many print check warnings what it would export has (export_warnings; -1 while checking); the center of rotation's marker (where it is drawn, and its setting); in align, mirror and measure modes the align dots, mirror arrows (screen x, y) or measure points.
 
 Python: `cad.ui_state()`
 

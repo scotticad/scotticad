@@ -2,7 +2,8 @@
 # test, built only from ScottiCAD primitives (boxes, cylinders, tubes).
 #
 # Run it from the Scripting console's Editor tab (or cad.run_script from
-# Python). Everything ends up in one group, so a single Ctrl+Z removes it.
+# Python). Everything ends up in one group, and a script's run is a single
+# undo step, so one Ctrl+Z removes it all.
 #
 # Axes: X runs stern (-) to bow (+), Y is port/starboard, Z is up. Sizes
 # are in mm; the boat is about 60 x 31 x 48, like the original.

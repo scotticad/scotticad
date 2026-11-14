@@ -33,9 +33,10 @@ const gearAlpha = 20 * math.Pi / 180
 // first on +X, tips at radius ra, roots at rf, each flank an involute of
 // the base circle, turned in by cut radians (thinning each tooth by 2 cut;
 // a negative cut fattens them). Below the base circle the flanks run
-// straight to the root. With a cut, a tip that would come to a point is
-// lowered, and a gap that would close at the root is kept open.
-func toothedOutline(m float64, z int, ra, rf, cut float64) []Pt {
+// straight to the root. With keepOpen, a tip that would come to a point is
+// lowered, and a gap that would close at the root is kept open; the spur
+// gear goes without, so its outline stays the standard one.
+func toothedOutline(m float64, z int, ra, rf, cut float64, keepOpen bool) []Pt {
 	r := m * float64(z) / 2
 	rb := r * math.Cos(gearAlpha)
 	inv := func(rho float64) float64 {
@@ -49,7 +50,7 @@ func toothedOutline(m float64, z int, ra, rf, cut float64) []Pt {
 	r0 := math.Max(rb, rf)
 	// half a tooth's angular width at radius rho (reads cut as it changes)
 	half := func(rho float64) float64 { return math.Pi/(2*float64(z)) + invA - inv(rho) - cut }
-	if cut != 0 {
+	if keepOpen {
 		// at least 0.2 mm of gap at the root and of land at the tip
 		cut = math.Max(cut, math.Pi/(2*float64(z))+invA-inv(r0)-math.Pi/float64(z)+0.1/r0)
 		if half(r0)*r0 < 0.1 {
@@ -105,7 +106,7 @@ func toothedOutline(m float64, z int, ra, rf, cut float64) []Pt {
 func involuteOutline(m float64, z int) []Pt {
 	z = max(z, 8)
 	r := m * float64(z) / 2
-	return toothedOutline(m, z, r+m, r-1.25*m, 0)
+	return toothedOutline(m, z, r+m, r-1.25*m, 0, false)
 }
 
 // twistExtrude extrudes a region (outer outline counter-clockwise, holes
@@ -188,13 +189,27 @@ func flankCut(clr, r, helix float64) float64 {
 	return clr / (rb * math.Cos(betaB))
 }
 
+// outerGearOutline is an outside gear's outline and its root radius. A tip
+// gap deep enough to reach half way to the axis is cut short there.
+func outerGearOutline(m float64, z int, helix, clr, tip float64) ([]Pt, float64) {
+	r := m * float64(z) / 2
+	rf := math.Max(r-m-tip, r/2)
+	return toothedOutline(m, z, r+m, rf, flankCut(clr, r, helix), true), rf
+}
+
+// ringGearSpaces is the outline of a ring gear's tooth spaces, unturned.
+func ringGearSpaces(m float64, z int, helix, clr, tip float64) []Pt {
+	r := m * float64(z) / 2
+	return toothedOutline(m, z, r+m+tip, r-m, -flankCut(clr, r, helix), true)
+}
+
 // outerGear is an outside gear (sun, planet, spur or helical), first tooth
 // on +X at the heights where the twist is zero, with an optional bore.
 func outerGear(m float64, z int, h, helix float64, herringbone bool, clr, tip, bore float64) *geom.Mesh {
 	r := m * float64(z) / 2
-	outline := toothedOutline(m, z, r+m, r-m-tip, flankCut(clr, r, helix))
+	outline, rf := outerGearOutline(m, z, helix, clr, tip)
 	var holes [][]Pt
-	if bore > 0 && bore < m*float64(z)-3*m {
+	if bore > 0 && bore/2 < rf-m/4 {
 		holes = append(holes, reversed(circlePts(0, 0, bore/2, 48)))
 	}
 	zs, angs := gearTwist{helix, r, h, herringbone}.sections()
@@ -207,7 +222,7 @@ func outerGear(m float64, z int, h, helix float64, herringbone bool, clr, tip, b
 // by the clearance.
 func ringGear(m float64, z int, h, helix float64, herringbone bool, clr, tip, rim, phase float64) *geom.Mesh {
 	r := m * float64(z) / 2
-	space := toothedOutline(m, z, r+m+tip, r-m, -flankCut(clr, r, helix))
+	space := ringGearSpaces(m, z, helix, clr, tip)
 	s, c := math.Sincos(phase)
 	for i, p := range space {
 		space[i] = Pt{p.X*c - p.Y*s, p.X*s + p.Y*c}

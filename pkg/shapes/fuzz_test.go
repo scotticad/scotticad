@@ -31,11 +31,18 @@ func fzRelaxed(check string) bool {
 	return false
 }
 
-// fzWithin runs f and fails if it doesn't finish within d. A panic in f
-// crashes the test binary with f's own stack, which the fuzzer records as
-// a crasher like any other.
+// fzSlack stretches every fzWithin limit. The limits are written as what
+// an input should take on an idle machine; the fuzzer runs a worker per
+// core, and on a busy machine an input that takes 3 s alone took over 15,
+// failing as a hang when it wasn't one. A real hang still trips it.
+const fzSlack = 4
+
+// fzWithin runs f and fails if it doesn't finish within d (times fzSlack).
+// A panic in f crashes the test binary with f's own stack, which the
+// fuzzer records as a crasher like any other.
 func fzWithin(t *testing.T, d time.Duration, what string, f func()) {
 	t.Helper()
+	d *= fzSlack
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -220,6 +227,70 @@ func fzParam(v float64, sel uint8) float64 {
 	return v
 }
 
+// FuzzTube builds bent tubes from bend tables made of the fuzzer's bytes:
+// three per row, read as a length, an angle and a turn that reach a little
+// past what a table may hold. A table CheckBends refuses builds the
+// stand-in; one it accepts builds a tube that is finite, closed as built,
+// and starts at the origin heading along +X.
+func FuzzTube(f *testing.F) {
+	f.Add([]byte{20, 148, 128, 20, 128, 128}, 10.0, 0.0, 15.0, 32.0) // the default L
+	f.Add([]byte{0, 255, 0, 0, 0, 255, 255, 128, 128}, 10.0, 2.0, 5.0, 8.0)
+	f.Add([]byte{1, 200, 190, 1, 60, 60, 1, 200, 190, 1, 60, 60}, 50.0, 20.0, 0.5, 64.0)
+	f.Add([]byte{}, 1.0, 0.0, 200.0, 3.0)
+	f.Add([]byte{255, 128, 128}, math.NaN(), math.Inf(1), -5.0, 1e9)
+	k, _ := Lookup("benttube")
+	f.Fuzz(func(t *testing.T, rows []byte, dia, wall, bend, sides float64) {
+		// up to 40 rows: a full table of 200 is half a million triangles,
+		// too many to build in every one of the fuzzer's workers at once
+		// (TestTubeLongestTable builds one)
+		if len(rows) > 3*40 {
+			rows = rows[:3*40]
+		}
+		var bs []Bend
+		for i := 0; i+2 < len(rows); i += 3 {
+			bs = append(bs, Bend{
+				Length: float64(rows[i]) - 2,             // -2 to 253
+				Angle:  (float64(rows[i+1]) - 128) * 1.5, // -192 to 190.5
+				Turn:   (float64(rows[i+2]) - 128) * 3,   // -384 to 381
+			})
+		}
+		// the parameters as Build gives them to the shape: held to their sliders' ranges
+		v := k.clamp(tubeValues(bs, dia, wall, bend, sides))
+		var m *geom.Mesh
+		fzWithin(t, 15*time.Second, "tubeMesh", func() { m = tubeMesh(v) })
+		if CheckBends(bs) != nil {
+			if m != nil {
+				t.Fatalf("a table CheckBends refuses built a tube: %v", bs)
+			}
+			if b := Build("benttube", geom.V(10, 10, 10), v); b == nil || len(b.Tris) == 0 {
+				t.Fatal("no stand-in for a refused table")
+			}
+			return
+		}
+		if m == nil {
+			// accepted, but nothing to sweep: every run and bend too small to count
+			if p, _ := TubePath(bs, 15); len(p) >= 2 {
+				t.Fatalf("an accepted table with a path of %d stations built nothing: %v", len(p), bs)
+			}
+			return
+		}
+		fzMeshFinite(t, "tubeMesh", m)
+		if open, nm := m.EdgeCheck(0); open != 0 || nm != 0 {
+			t.Fatalf("tube not closed as built: %d open, %d non-manifold edges; table %v, parameters %v", open, nm, bs, v.Num)
+		}
+		_, _, r, _ := tubeDims(v)
+		path, ends := TubePath(bs, r)
+		if len(ends) != len(bs) || path[0].P != (geom.Vec3{}) || path[0].T != geom.V(1, 0, 0) {
+			t.Fatalf("path: %d row ends for %d rows, starting at %v heading %v", len(ends), len(bs), path[0].P, path[0].T)
+		}
+		for i, s := range path {
+			if math.Abs(s.T.Len()-1) > 1e-6 || math.Abs(s.T.Dot(s.U)) > 1e-6 || math.Abs(s.U.Dot(s.W)) > 1e-6 {
+				t.Fatalf("station %d: its frame has drifted: %+v", i, s)
+			}
+		}
+	})
+}
+
 func FuzzBuild(f *testing.F) {
 	n := len(All())
 	for i := 0; i < n; i++ {
@@ -238,7 +309,7 @@ func FuzzBuild(f *testing.F) {
 		v := Values{Num: map[string]float64{}, Text: text, Font: font}
 		pv := []float64{p0, p1, p2, p3}
 		for i, p := range k.Params {
-			if p.Kind != Slider {
+			if p.Kind != Slider && p.Kind != Choice {
 				continue
 			}
 			s := uint8(sel >> (4 * (i % 8)))

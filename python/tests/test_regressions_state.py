@@ -121,7 +121,7 @@ def test_locked_shapes_keep_their_parameters(cad):
         cad.set_param(b, "length", 50)
     cad.click_control("param-length-up")
     assert math.isclose(size(cad, b)[0], 20, abs_tol=1e-9)
-    # and Alt-drag or Ctrl+D make no copy of them
+    # and Ctrl+D makes no copy of them
     cad.key("ctrl+d")
     assert len(cad.nodes()) == 1
 

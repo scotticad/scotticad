@@ -785,7 +785,7 @@ func parsePath(d string) [][]Pt {
 				}
 				c2 := abs(v[2], v[3])
 				e := abs(v[4], v[5])
-				c = append(c, cubic(p, c1, c2, e)...)
+				c = append(c, curveOrLine(cubic(p, c1, c2, e), e)...)
 				ctrl = c2
 				p = e
 			}
@@ -808,7 +808,7 @@ func parsePath(d string) [][]Pt {
 					q = abs(v[0], v[1])
 					e = abs(v[2], v[3])
 				}
-				c = append(c, quad(p, q, e)...)
+				c = append(c, curveOrLine(quad(p, q, e), e)...)
 				ctrl = q
 				p = e
 			}
@@ -842,6 +842,19 @@ func parsePath(d string) [][]Pt {
 	}
 	flush()
 	return out
+}
+
+// curveOrLine is a curve's points, or a straight line to its end when
+// they aren't numbers: coordinates so large that a control point (a
+// smooth curve's is reflected, doubling it) overflows. svgArc does the
+// same.
+func curveOrLine(pts []Pt, end Pt) []Pt {
+	for _, p := range pts {
+		if math.IsNaN(p.X+p.Y) || math.IsInf(p.X+p.Y, 0) {
+			return []Pt{end}
+		}
+	}
+	return pts
 }
 
 func cubic(p0, p1, p2, p3 Pt) []Pt {
