@@ -455,7 +455,7 @@ func (b *Batch) Dashed(x0, y0, x1, y1, width, dash float64, c Color) {
 
 // clipSegment is the part of the segment (x0,y0)-(x1,y1) inside the
 // rectangle [minX, maxX] × [minY, maxY], as the fractions s0 ≤ s1 of the
-// way along it (Liang–Barsky); ok is false if none of it is inside or the
+// way along it (Liang-Barsky); ok is false if none of it is inside or the
 // segment isn't finite.
 func clipSegment(x0, y0, x1, y1, minX, minY, maxX, maxY float64) (s0, s1 float64, ok bool) {
 	dx, dy := x1-x0, y1-y0
@@ -582,6 +582,49 @@ func (b *Batch) applyClip() {
 	gl.Scissor(int32(r.X*b.DPI), int32(b.H*b.DPI-(r.Y+r.H)*b.DPI), int32(r.W*b.DPI), int32(r.H*b.DPI))
 }
 
+// Texture is a picture with a texture of its own, not in the atlas: one
+// too big for it (a sketch's picture to trace).
+type Texture struct {
+	id   uint32
+	W, H int
+}
+
+// NewTexture uploads img.
+func NewTexture(img *image.RGBA) *Texture {
+	t := &Texture{id: gl.GenTexture(), W: img.Bounds().Dx(), H: img.Bounds().Dy()}
+	gl.BindTexture(gl.TEXTURE_2D, t.id)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, int32(t.W), int32(t.H), gl.RGBA, gl.UNSIGNED_BYTE, img.Pix)
+	return t
+}
+
+// Delete frees the texture.
+func (t *Texture) Delete() {
+	if t != nil && t.id != 0 {
+		gl.DeleteTexture(t.id)
+		t.id = 0
+	}
+}
+
+// DrawTexture draws t stretched over the four corners q (top left, top
+// right, bottom right, bottom left, in pixels), tinted by c (its alpha
+// fades it).
+func (b *Batch) DrawTexture(t *Texture, q [4][2]float64, c Color) {
+	if t == nil || t.id == 0 {
+		return
+	}
+	b.Flush()
+	uv := [4][2]float32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	for _, i := range []int{0, 1, 2, 0, 2, 3} {
+		b.vert(q[i][0], q[i][1], uv[i][0], uv[i][1], c)
+	}
+	b.draw(t.id)
+}
+
 // Flush draws accumulated geometry. Coordinates are logical pixels; the
 // viewport is device pixels.
 func (b *Batch) Flush() {
@@ -591,6 +634,11 @@ func (b *Batch) Flush() {
 		gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, int32(b.atlasSize), int32(b.atlasSize), gl.RGBA, gl.UNSIGNED_BYTE, b.pix.Pix)
 		b.dirty = false
 	}
+	b.draw(b.atlas)
+}
+
+// draw draws the accumulated geometry with texture tex.
+func (b *Batch) draw(tex uint32) {
 	if len(b.data) == 0 {
 		return
 	}
@@ -600,7 +648,7 @@ func (b *Batch) Flush() {
 	gl.UseProgram(b.prog)
 	gl.Uniform2f(b.uScreen, float32(b.W), float32(b.H))
 	gl.ActiveTexture(gl.TEXTURE0)
-	gl.BindTexture(gl.TEXTURE_2D, b.atlas)
+	gl.BindTexture(gl.TEXTURE_2D, tex)
 	gl.Uniform1i(b.uTex, 0)
 	gl.BindVertexArray(b.vao)
 	gl.BindBuffer(gl.ARRAY_BUFFER, b.vbo)

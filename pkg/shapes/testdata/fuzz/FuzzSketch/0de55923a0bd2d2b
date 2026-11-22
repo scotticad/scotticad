@@ -1,0 +1,8 @@
+go test fuzz v1
+[]byte("12a0000\x01\x03200\x00\x00ax\x00")
+byte('\x01')
+float64(1)
+float64(1)
+float64(225)
+float64(359)
+float64(1)

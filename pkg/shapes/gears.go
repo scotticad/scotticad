@@ -362,37 +362,37 @@ func planetaryParts(v Values) []Placed {
 func registerGears(mk *[]string) {
 	helix := slider("helix", "Helix Angle", -45, 45, 1, 20, false)
 	registerPart(mk, "helicalgear", "Helical Gear", "#c8ccd0", []Param{
-		mslider("module", "Module", 0.3, 5, 0.1, 1.5, false),
+		mslider("module", "Module", 0.3, 5, 0.1, 1.5),
 		slider("teeth", "Teeth", 8, 120, 1, 20, true),
-		lslider("thickness", "Thickness", 0.5, 50, 0.5, 8, false),
+		lslider("thickness", "Thickness", 0.5, 50, 0.5, 8),
 		helix,
 		slider("herringbone", "Herringbone", 0, 1, 1, 0, true),
-		lslider("bore", "Bore Dia", 0, 50, 0.5, 5, false),
-		lslider("clearance", "Clearance", 0, 1, 0.05, 0, false),
-		lslider("tipgap", "Tip Gap", 0.1, 2, 0.05, 0.4, false),
+		lslider("bore", "Bore Dia", 0, 50, 0.5, 5),
+		lslider("clearance", "Clearance", 0, 1, 0.05, 0),
+		lslider("tipgap", "Tip Gap", 0.1, 2, 0.05, 0.4),
 	}, helicalGearModel)
 	registerPart(mk, "ringgear", "Ring Gear", "#2f3640", []Param{
-		mslider("module", "Module", 0.3, 5, 0.1, 1.5, false),
+		mslider("module", "Module", 0.3, 5, 0.1, 1.5),
 		slider("teeth", "Teeth", 16, 200, 1, 40, true),
-		lslider("thickness", "Thickness", 0.5, 50, 0.5, 8, false),
+		lslider("thickness", "Thickness", 0.5, 50, 0.5, 8),
 		helix,
 		slider("herringbone", "Herringbone", 0, 1, 1, 0, true),
-		lslider("rim", "Rim", 0.8, 30, 0.5, 4, false),
-		lslider("clearance", "Clearance", 0, 1, 0.05, 0, false),
-		lslider("tipgap", "Tip Gap", 0.1, 2, 0.05, 0.4, false),
+		lslider("rim", "Rim", 0.8, 30, 0.5, 4),
+		lslider("clearance", "Clearance", 0, 1, 0.05, 0),
+		lslider("tipgap", "Tip Gap", 0.1, 2, 0.05, 0.4),
 	}, ringGearModel)
 	set := []Param{
-		mslider("module", "Module", 0.5, 5, 0.1, 1.5, false),
+		mslider("module", "Module", 0.5, 5, 0.1, 1.5),
 		slider("sun", "Sun Teeth", 8, 60, 1, 18, true),
 		slider("planet", "Planet Teeth", 8, 60, 1, 12, true),
 		slider("planets", "Planets", 1, 12, 1, 5, true),
-		lslider("thickness", "Thickness", 2, 50, 0.5, 10, false),
+		lslider("thickness", "Thickness", 2, 50, 0.5, 10),
 		slider("helix", "Helix Angle", 0, 45, 1, 30, false),
 		slider("herringbone", "Herringbone", 0, 1, 1, 1, true),
-		lslider("clearance", "Clearance", 0, 1, 0.05, 0.4, false),
-		lslider("tipgap", "Tip Gap", 0.1, 2, 0.05, 0.3, false),
-		lslider("rim", "Rim", 0.8, 30, 0.5, 5, false),
-		lslider("bore", "Sun Bore Dia", 0, 50, 0.5, 0, false),
+		lslider("clearance", "Clearance", 0, 1, 0.05, 0.4),
+		lslider("tipgap", "Tip Gap", 0.1, 2, 0.05, 0.3),
+		lslider("rim", "Rim", 0.8, 30, 0.5, 5),
+		lslider("bore", "Sun Bore Dia", 0, 50, 0.5, 0),
 	}
 	registerHiddenPart("planetary-sun", "Sun Gear", "#e1b12c", set, planetarySun)
 	registerHiddenPart("planetary-planet", "Planet Gear", "#c8ccd0", set, planetaryPlanet)

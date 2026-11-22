@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/scotticad/scotticad/pkg/geom"
+	"github.com/scotticad/scotticad/pkg/shapes"
 )
 
 // Fuzz tests. Run with
@@ -66,6 +67,31 @@ func fzDesign(t testing.TB) []byte {
 		{P: [3]geom.Vec3{x, y, z}},
 	}}
 	d.AddMesh("tetra", m, geom.V(-40, 0, 0))
+	// the features new in 0.4: sketches of each kind, a hull, a pattern of
+	// a hole, a stretch and a Gridfinity bin
+	curve := &shapes.Sketch{Paths: []shapes.SketchPath{
+		{Closed: true, Points: []shapes.SketchPoint{{P: [2]float64{-10, 0}}, {P: [2]float64{-4, 0}, Out: [2]float64{0, 3}}, {P: [2]float64{-6, 8}, Kind: shapes.PointAuto}}},
+		{Stroke: 1.5, Join: shapes.JoinRound, Cap: shapes.CapSquare, Points: []shapes.SketchPoint{{P: [2]float64{-12, 0}}, {P: [2]float64{-12, 10}, Kind: shapes.PointSmooth}, {P: [2]float64{-3, 12}}}},
+	}}
+	for _, kind := range []string{"sketch", "revolve", "coil"} {
+		if _, err := d.AddSketch(kind, curve, kind == "coil"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h1, _ := d.AddShape("cylinder", geom.V(0, 80, 0), false)
+	h2, _ := d.AddShape("sphere", geom.V(30, 80, 0), false)
+	if _, err := d.Group([]int{h1.ID, h2.ID}, ModeHull); err != nil {
+		t.Fatal(err)
+	}
+	ph, _ := d.AddShape("cylinder", geom.V(0, 120, 0), true)
+	if _, err := d.Pattern([]int{ph.ID}); err != nil {
+		t.Fatal(err)
+	}
+	sb, _ := d.AddShape("tube", geom.V(0, 160, 0), false)
+	if _, err := d.Stretch([]int{sb.ID}, geom.Translate(geom.V(0, 160, 10)), 0, 0, 15); err != nil {
+		t.Fatal(err)
+	}
+	d.AddShape("gridfinitybin", geom.V(60, 120, 0), false)
 	d.Camera = &Camera{Target: geom.V(1, 2, 3), Yaw: 0.5, Pitch: 0.3, Dist: 300, Ortho: true}
 	d.Notes = []Note{{P: geom.V(5, 5, 0), Text: "workplane note"}}
 	data, err := d.Marshal()
@@ -97,6 +123,15 @@ func FuzzUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"version":3,"nodes":[{"id":1,"kind":"benttube","size":[1,1,1],"bends":[{"length":1e308,"angle":1e308,"turn":-1e308},{"length":-5}]},
 {"id":2,"kind":"benttube","size":[10,10,10]},{"id":3,"kind":"benttube","bends":[]},{"id":4,"kind":"box","size":[5,5,5],"bends":[{"length":3}]},
 {"id":5,"kind":"benttube","size":[0,0,0],"m":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],"params":{"diameter":-1,"sides":1e9,"bend":0},"bends":[{"angle":180},{"angle":180},{"angle":180}]}]}`))
+	// sketches, patterns and stretches no editor would write
+	f.Add([]byte(`{"version":4,"nodes":[{"id":1,"kind":"sketch","size":[10,10,10],"params":{"quality":1e9,"twist":1e300,"twiststeps":-4},
+"sketch":{"paths":[{"points":[{"p":[0,0]},{"p":[1e300,0],"in":[1e308,-1e308]},{"p":[0,0],"kind":7}],"stroke":-1,"join":9}]}},
+{"id":2,"kind":"revolve","size":[1,1,1],"sketch":{"paths":[]}},{"id":3,"kind":"coil","size":[5,5,5],"params":{"turns":1e9,"pitch":0},"sketch":null},
+{"id":4,"kind":"box","size":[5,5,5],"sketch":{"paths":[{"points":[{"p":[0,0]},{"p":[5,0]},{"p":[0,5]}],"closed":true}]}}]}`))
+	f.Add([]byte(`{"version":4,"nodes":[{"id":1,"kind":"group","groupMode":"pattern","params":{"columns":1e9,"rows":50,"copies":1e9},"children":[
+{"id":2,"kind":"group","groupMode":"pattern","params":{"columns":50,"rows":50},"children":[{"id":3,"kind":"box","size":[1,1,1]}]}]},
+{"id":4,"kind":"group","groupMode":"stretch","params":{"amount":-1e300,"axis":7,"at":1e308},"children":[{"id":5,"kind":"box","size":[5,5,5]}]},
+{"id":6,"kind":"group","groupMode":"hull","children":[]},{"id":7,"kind":"group","groupMode":"pattern","children":[]}]}`))
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`null`))
 	f.Add([]byte(`[]`))

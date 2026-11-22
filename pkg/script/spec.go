@@ -57,6 +57,7 @@ var Methods = []Method{
 	{Name: "add_shape", API: "add_shape", Params: []Param{p("kind"), d("x", 0), d("y", 0), d("z", nil), d("hole", false)}, Result: "id"},
 	{Name: "add_outline", API: "add_outline", Params: []Param{p("points"), d("z0", 0), d("z1", 10), d("hole", false)}, Result: "id"},
 	{Name: "add_loft", API: "add_loft", Params: []Param{p("sections"), d("hole", false)}, Result: "id"},
+	{Name: "add_sketch", API: "add_sketch", Params: []Param{p("paths"), d("kind", "sketch"), d("x", 0), d("y", 0), d("z", nil), d("hole", false)}, Result: "id"},
 	{Name: "import_file", API: "import", Params: []Param{path("path"), d("x", 0), d("y", 0), d("scale", 1.0), d("units", "mm"), d("height", 10.0)}, Result: "id"},
 	{Name: "export", API: "export", Params: []Param{path("path"), d("selection_only", false)}, None: true},
 
@@ -91,6 +92,7 @@ var Methods = []Method{
 	{Name: "set_outline", API: "set_outline", Params: []Param{p("id"), p("points"), d("z0", nil), d("z1", nil)}, None: true},
 	{Name: "set_loft", API: "set_loft", Params: []Param{p("id"), p("sections")}, None: true},
 	{Name: "set_bends", API: "set_bends", Params: []Param{p("id"), p("bends")}, None: true},
+	{Name: "set_sketch", API: "set_sketch", Params: []Param{p("id"), p("paths")}, None: true},
 
 	// visibility
 	{Name: "hide", API: "hide", Params: []Param{ids}, None: true},
@@ -101,6 +103,9 @@ var Methods = []Method{
 	{Name: "group", API: "group", Params: []Param{d("mode", "union"), ids}, Result: "id"},
 	{Name: "ungroup", API: "ungroup", Params: []Param{ids}, Result: "ids"},
 	{Name: "set_group_mode", API: "set_group_mode", Params: []Param{p("mode"), ids}, None: true},
+	{Name: "pattern", API: "pattern", Params: []Param{d("type", nil), d("columns", nil), d("rows", nil), d("dx", nil), d("dy", nil), d("stagger", nil),
+		d("count", nil), d("radius", nil), d("angle", nil), d("turn", nil), ids}, Result: "id"},
+	{Name: "stretch", API: "stretch", Params: []Param{p("axis"), d("amount", nil), d("length", nil), d("at", nil), ids}, Result: "id"},
 	{Name: "split", API: "split", Params: []Param{p("axis"), d("at", nil), d("keep", "both"), d("gap", 0), ids}, Result: "ids"},
 	{Name: "duplicate", API: "duplicate", Result: "ids"},
 	{Name: "copy", API: "copy", None: true},
@@ -136,7 +141,7 @@ var Methods = []Method{
 	{Name: "set_camera", API: "set_camera", Params: []Param{d("target", nil), d("yaw", nil), d("pitch", nil), d("dist", nil), d("ortho", nil)}, None: true},
 	{Name: "home_view", API: "home_view", None: true},
 	{Name: "fit_view", API: "fit_view", None: true},
-	{Name: "screenshot", API: "screenshot", Params: []Param{path("path")}},
+	{Name: "screenshot", API: "screenshot", Params: []Param{optPath("path", nil)}},
 	{Name: "project", API: "project", Params: []Param{p("x"), p("y"), p("z")}, special: "xy"},
 	{Name: "version", API: "version"},
 	{Name: "ui_state", API: "get_ui_state"},
@@ -145,11 +150,21 @@ var Methods = []Method{
 	{Name: "handle", API: "list_handles", Params: []Param{p("kind"), d("index", 0)}, special: "handle"},
 	{Name: "click_control", API: "click_control", Params: []Param{p("id")}, None: true},
 
+	// the sketch workspace
+	{Name: "edit_sketch", API: "edit_sketch", Params: []Param{d("id", nil), d("kind", "sketch"), d("x", 0), d("y", 0), d("z", nil)}, None: true},
+	{Name: "sketch_state", API: "sketch_state"},
+	{Name: "sketch_tool", API: "sketch_tool", Params: []Param{p("tool")}, None: true},
+	{Name: "sketch_view", API: "sketch_view", Params: []Param{p("x"), p("y"), p("zoom")}, None: true},
+	{Name: "sketch_done", API: "sketch_done", Result: "id"},
+	{Name: "sketch_cancel", API: "sketch_cancel", None: true},
+	{Name: "sketch_image", API: "sketch_image", Params: []Param{optPath("path", nil), d("x", nil), d("y", nil), d("width", nil), d("angle", nil), d("opacity", nil)}, None: true},
+	{Name: "sketch_image_remove", API: "sketch_image_remove", None: true},
+
 	// input simulation
 	{Name: "mouse_move", API: "mouse_move", Params: []Param{p("x"), p("y"), d("mods", []any{})}, None: true},
 	{Name: "mouse_down", API: "mouse_down", Params: []Param{p("x"), p("y"), d("button", "left"), d("mods", []any{})}, None: true},
 	{Name: "mouse_up", API: "mouse_up", Params: []Param{p("x"), p("y"), d("button", "left"), d("mods", []any{})}, None: true},
-	{Name: "click", API: "click", Params: []Param{p("x"), p("y"), d("button", "left"), d("mods", []any{})}, None: true},
+	{Name: "click", API: "click", Params: []Param{p("x"), p("y"), d("button", "left"), d("mods", []any{}), d("double", false)}, None: true},
 	{Name: "drag", API: "drag", Params: []Param{p("x0"), p("y0"), p("x1"), p("y1"), d("steps", 10), d("button", "left"), d("mods", []any{})}, None: true},
 	{Name: "wheel", API: "wheel", Params: []Param{p("x"), p("y"), p("delta")}, None: true},
 	{Name: "key", API: "key", Params: []Param{p("keys")}, None: true},

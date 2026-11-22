@@ -164,7 +164,7 @@ func (a *App) saveChanges() bool {
 // openPath opens the design at p in place of the current one, which it
 // first offers to save; false if it wasn't opened.
 func (a *App) openPath(p string) bool {
-	if !a.saveChanges() {
+	if a.sketchInTheWay() || !a.saveChanges() {
 		return false
 	}
 	if err := a.ed.Open(p); err != nil {

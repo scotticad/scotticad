@@ -60,6 +60,8 @@ type Kind struct {
 	sections []Section
 	// bends are a bent tube's default bend table (see Bend).
 	bends []Bend
+	// sketch is a sketch kind's default drawing (see Sketch).
+	sketch *Sketch
 	// text is the default for a TextParam ("TEXT" when empty).
 	text string
 }
@@ -83,6 +85,8 @@ type Values struct {
 	Sections []Section
 	// Bends are a bent tube's bend table (see Bend).
 	Bends []Bend
+	// Sketch is a sketch shape's drawing (see Sketch).
+	Sketch *Sketch
 }
 
 // Get returns the value of parameter k, or def if it isn't set.
@@ -118,7 +122,7 @@ func All() []*Kind {
 
 // Defaults returns default parameter values for a kind.
 func (k *Kind) Defaults() Values {
-	v := Values{Num: map[string]float64{}, Sections: k.sections, Bends: k.bends}
+	v := Values{Num: map[string]float64{}, Sections: k.sections, Bends: k.bends, Sketch: k.sketch}
 	for _, p := range k.Params {
 		switch p.Kind {
 		case Slider, Choice:
@@ -151,7 +155,7 @@ func Build(id string, size geom.Vec3, v Values) *geom.Mesh {
 	}
 	sort.Strings(keys)
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s|%v|%v|%v|%q|%q|%s|%s", k.ID, size.X, size.Y, size.Z, v.Text, v.Font, SectionsKey(v.Sections), BendsKey(v.Bends))
+	fmt.Fprintf(&sb, "%s|%v|%v|%v|%q|%q|%s|%s|%s", k.ID, size.X, size.Y, size.Z, v.Text, v.Font, SectionsKey(v.Sections), BendsKey(v.Bends), SketchKey(v.Sketch))
 	for _, kk := range keys {
 		fmt.Fprintf(&sb, "|%s=%v", kk, v.Num[kk])
 	}
@@ -159,7 +163,18 @@ func Build(id string, size geom.Vec3, v Values) *geom.Mesh {
 	if m, ok := cache.Load(key); ok {
 		return m.(*geom.Mesh)
 	}
-	m := k.build(size, v).Clean().Oriented()
+	raw := k.build(size, v)
+	m := raw.Clean()
+	if len(m.Tris) < len(raw.Tris) && math.Min(math.Abs(size.X), math.Min(math.Abs(size.Y), math.Abs(size.Z))) >= 1e-4 {
+		// squashing a shape can flatten a sliver to nothing; dropped, it
+		// leaves a T-junction where its long edge met a neighbour (a
+		// Gridfinity baseplate ten units long squashed to 5 mm, say), which
+		// a split of the neighbour closes. (Not in a shape squashed thinner
+		// than the repair's weld, which would weld it to nothing, and
+		// slowly: a long hex bolt 1e-9 mm wide takes about 20 s.)
+		m = m.FixTJunctions()
+	}
+	m = m.Oriented()
 	cache.Store(key, m)
 	return m
 }
@@ -222,16 +237,16 @@ func choice(key, label string, options []string, def int) Param {
 }
 
 // lslider is a slider for a length (see Param.Length).
-func lslider(key, label string, min, max, step, def float64, isInt bool) Param {
-	p := slider(key, label, min, max, step, def, isInt)
+func lslider(key, label string, min, max, step, def float64) Param {
+	p := slider(key, label, min, max, step, def, false)
 	p.Length = true
 	return p
 }
 
 // mslider is a slider for a metric standard's value in mm (see
 // Param.Metric).
-func mslider(key, label string, min, max, step, def float64, isInt bool) Param {
-	p := slider(key, label, min, max, step, def, isInt)
+func mslider(key, label string, min, max, step, def float64) Param {
+	p := slider(key, label, min, max, step, def, false)
 	p.Metric = true
 	return p
 }
@@ -414,19 +429,19 @@ func roundedBox(size geom.Vec3, r float64, steps int) *geom.Mesh {
 
 func init() {
 	register(&Kind{ID: "box", Label: "Box", Color: "#e2142a", Size: geom.V(20, 20, 20),
-		Params: append([]Param{lslider("radius", "Radius", 0, 10, 0.1, 0, false), slider("steps", "Steps", 1, 20, 1, 10, true)}, sizeParams()...),
+		Params: append([]Param{lslider("radius", "Radius", 0, 10, 0.1, 0), slider("steps", "Steps", 1, 20, 1, 10, true)}, sizeParams()...),
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			return roundedBox(s, v.Get("radius", 0), int(v.Get("steps", 10)))
 		}})
 	register(&Kind{ID: "cylinder", Label: "Cylinder", Color: "#f6851f", Size: geom.V(20, 20, 20),
-		Params: []Param{slider("sides", "Sides", 3, 64, 1, 48, true), lslider("bevel", "Bevel", 0, 10, 0.1, 0, false), slider("segments", "Segments", 1, 10, 1, 1, true)},
+		Params: []Param{slider("sides", "Sides", 3, 256, 1, 48, true), lslider("bevel", "Bevel", 0, 10, 0.1, 0), slider("segments", "Segments", 1, 10, 1, 1, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			R, H := s.X/2, s.Z/2
 			m := revolve(bevelledProfile(R, H, v.Get("bevel", 0), int(v.Get("segments", 1))), int(v.Get("sides", 48)), false)
 			return m.FitTo(s)
 		}})
 	register(&Kind{ID: "sphere", Label: "Sphere", Color: "#1c9ad6", Size: geom.V(20, 20, 20),
-		Params: []Param{slider("steps", "Steps", 4, 64, 1, 24, true)},
+		Params: []Param{slider("steps", "Steps", 4, 256, 1, 24, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			n := int(v.Get("steps", 24))
 			return revolve(arc(0, 0, 0.5, -math.Pi/2, math.Pi/2, max(n/2, 2)), n, false).FitTo(s)
@@ -435,7 +450,7 @@ func init() {
 	// biggest cone (sliders clamp every value, typed or loaded); a top wider
 	// than the base is built as the base
 	register(&Kind{ID: "cone", Label: "Cone", Color: "#7b2c9d", Size: geom.V(20, 20, 20),
-		Params: []Param{lslider("top", "Top Radius", 0, 100, 0.1, 0, false), slider("sides", "Sides", 3, 64, 1, 48, true)},
+		Params: []Param{lslider("top", "Top Radius", 0, 100, 0.1, 0), slider("sides", "Sides", 3, 256, 1, 48, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			rt := 0.5 * v.Get("top", 0) / math.Max(s.X/2, 1e-9)
 			m := revolve([][2]float64{{0, -0.5}, {0.5, -0.5}, {math.Min(rt, 0.5), 0.5}, {0, 0.5}}, int(v.Get("sides", 48)), false)
@@ -453,7 +468,7 @@ func init() {
 		}})
 	register(&Kind{ID: "text", Label: "Text", Color: "#e2142a", Size: geom.V(70.18, 19.06, 10), // "TEXT" in the built-in font
 		Params: []Param{{Key: "text", Label: "Text", Kind: TextParam, SizeAxis: -1}, {Key: "font", Label: "Font", Kind: FontParam, SizeAxis: -1},
-			lslider("height", "Height", 0.1, 100, 0.1, 10, false)},
+			lslider("height", "Height", 0.1, 100, 0.1, 10)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			m := TextMesh(v.Text, v.Font, 1)
 			if len(m.Tris) == 0 {
@@ -462,7 +477,7 @@ func init() {
 			return m.FitTo(s)
 		}})
 	register(&Kind{ID: "roundroof", Label: "Round Roof", Color: "#3ab8c4", Size: geom.V(20, 20, 10),
-		Params: []Param{slider("sides", "Sides", 3, 64, 1, 24, true)},
+		Params: []Param{slider("sides", "Sides", 3, 256, 1, 24, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			prof := make([]Pt, 0)
 			for _, p := range arc(0, 0, 0.5, 0, math.Pi, int(v.Get("sides", 24))) {
@@ -471,14 +486,14 @@ func init() {
 			return extrude(prof).Transform(swapYZ).FitTo(s)
 		}})
 	register(&Kind{ID: "halfsphere", Label: "Half Sphere", Color: "#e2148f", Size: geom.V(20, 20, 10),
-		Params: []Param{slider("steps", "Steps", 4, 64, 1, 24, true)},
+		Params: []Param{slider("steps", "Steps", 4, 256, 1, 24, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			n := int(v.Get("steps", 24))
 			prof := append([][2]float64{{0, 0}}, arc(0, 0, 0.5, 0, math.Pi/2, max(n/4, 2))...)
 			return revolve(prof, n, false).FitTo(s)
 		}})
 	register(&Kind{ID: "torus", Label: "Torus", Color: "#1c9ad6", Size: geom.V(20, 20, 4),
-		Params: []Param{lslider("radius", "Radius", 1, 50, 0.5, 10, false), lslider("tube", "Tube", 0.5, 20, 0.1, 2, false), slider("sides", "Sides", 3, 64, 1, 24, true), slider("steps", "Steps", 3, 64, 1, 16, true)},
+		Params: []Param{lslider("radius", "Radius", 1, 50, 0.5, 10), lslider("tube", "Tube", 0.5, 20, 0.1, 2), slider("sides", "Sides", 3, 256, 1, 24, true), slider("steps", "Steps", 3, 256, 1, 16, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			R, r := v.Get("radius", 10), v.Get("tube", 2)
 			// Radius is the outside radius; the tube's centre is at R−r, so a
@@ -493,13 +508,13 @@ func init() {
 			return revolve(prof, int(v.Get("sides", 24)), true).FitTo(s)
 		}})
 	register(&Kind{ID: "tube", Label: "Tube", Color: "#f6851f", Size: geom.V(20, 20, 20),
-		Params: []Param{lslider("wall", "Wall Thickness", 0.1, 10, 0.1, 2, false), slider("sides", "Sides", 3, 64, 1, 48, true)},
+		Params: []Param{lslider("wall", "Wall Thickness", 0.1, 10, 0.1, 2), slider("sides", "Sides", 3, 256, 1, 48, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			ri := math.Max(0.5-v.Get("wall", 2)/math.Max(s.X, 1e-9), 0.01)
 			return revolve([][2]float64{{ri, -0.5}, {0.5, -0.5}, {0.5, 0.5}, {ri, 0.5}}, int(v.Get("sides", 48)), true).FitTo(s)
 		}})
 	register(&Kind{ID: "ring", Label: "Ring", Color: "#8a5a2b", Size: geom.V(20, 20, 4),
-		Params: []Param{lslider("thickness", "Thickness", 0.5, 10, 0.1, 2, false), slider("sides", "Sides", 3, 64, 1, 48, true)},
+		Params: []Param{lslider("thickness", "Thickness", 0.5, 10, 0.1, 2), slider("sides", "Sides", 3, 256, 1, 48, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			ri := math.Max(0.5-v.Get("thickness", 2)/math.Max(s.X, 1e-9), 0.01)
 			return revolve([][2]float64{{ri, -0.5}, {0.5, -0.5}, {0.5, 0.5}, {ri, 0.5}}, int(v.Get("sides", 48)), true).FitTo(s)
@@ -513,11 +528,11 @@ func init() {
 	// (Top Width × Top Length), Height tall, centred
 	register(&Kind{ID: "taperedbox", Label: "Tapered Box", Color: "#5a6270", Size: geom.V(20, 20, 10),
 		Params: []Param{
-			lslider("bw", "Base Width", 0, 200, 0.5, 20, false),
-			lslider("bl", "Base Length", 0, 200, 0.5, 20, false),
-			lslider("tw", "Top Width", 0, 200, 0.5, 10, false),
-			lslider("tl", "Top Length", 0, 200, 0.5, 10, false),
-			lslider("height", "Height", 0.1, 200, 0.1, 10, false),
+			lslider("bw", "Base Width", 0, 200, 0.5, 20),
+			lslider("bl", "Base Length", 0, 200, 0.5, 20),
+			lslider("tw", "Top Width", 0, 200, 0.5, 10),
+			lslider("tl", "Top Length", 0, 200, 0.5, 10),
+			lslider("height", "Height", 0.1, 200, 0.1, 10),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			return taperedBox(v.Get("bw", 20), v.Get("bl", 20), v.Get("tw", 10), v.Get("tl", 10)).FitTo(s)
@@ -531,10 +546,10 @@ func init() {
 	// be the wider, or 0 for a triangle
 	register(&Kind{ID: "trapezoid", Label: "Trapezoid", Color: "#3fae2a", Size: geom.V(20, 20, 10),
 		Params: []Param{
-			lslider("base", "Base Width", 0, 200, 0.5, 20, false),
-			lslider("top", "Top Width", 0, 200, 0.5, 10, false),
-			lslider("height", "Height", 0.5, 200, 0.5, 20, false),
-			lslider("thickness", "Thickness", 0.1, 200, 0.1, 10, false),
+			lslider("base", "Base Width", 0, 200, 0.5, 20),
+			lslider("top", "Top Width", 0, 200, 0.5, 10),
+			lslider("height", "Height", 0.5, 200, 0.5, 20),
+			lslider("thickness", "Thickness", 0.1, 200, 0.1, 10),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			return extrude(trapezoidOutline(v.Get("base", 20), v.Get("top", 10))).FitTo(s)
@@ -543,7 +558,7 @@ func init() {
 			return geom.V(math.Max(math.Max(v.Get("base", 20), v.Get("top", 10)), 0.01), v.Get("height", 20), v.Get("thickness", 10))
 		}})
 	register(&Kind{ID: "polygon", Label: "Polygon", Color: "#273a8c", Size: geom.V(20, 17.32, 20),
-		Params: []Param{slider("sides", "Sides", 3, 20, 1, 6, true), lslider("bevel", "Bevel", 0, 10, 0.1, 0, false), slider("segments", "Segments", 1, 10, 1, 1, true)},
+		Params: []Param{slider("sides", "Sides", 3, 20, 1, 6, true), lslider("bevel", "Bevel", 0, 10, 0.1, 0), slider("segments", "Segments", 1, 10, 1, 1, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			R, H := s.X/2, s.Z/2
 			return revolve(bevelledProfile(R, H, v.Get("bevel", 0), int(v.Get("segments", 1))), int(v.Get("sides", 6)), false).FitTo(s)
@@ -551,7 +566,7 @@ func init() {
 	register(&Kind{ID: "icosahedron", Label: "Icosahedron", Color: "#e2142a", Size: geom.V(20, 20, 20),
 		build: func(s geom.Vec3, v Values) *geom.Mesh { return icosahedron().FitTo(s) }})
 	register(&Kind{ID: "paraboloid", Label: "Paraboloid", Color: "#3ab8c4", Size: geom.V(20, 20, 20),
-		Params: []Param{slider("steps", "Steps", 4, 64, 1, 24, true)},
+		Params: []Param{slider("steps", "Steps", 4, 256, 1, 24, true)},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			n := int(v.Get("steps", 24))
 			prof := [][2]float64{{0, -0.5}}
@@ -559,7 +574,7 @@ func init() {
 				t := float64(i) / float64(n/2)
 				prof = append(prof, [2]float64{0.5 * math.Sqrt(1-t), -0.5 + t})
 			}
-			return revolve(append([][2]float64{{0, -0.5}, {0.5, -0.5}}, prof[2:]...), n, false).FitTo(s)
+			return revolve(prof, n, false).FitTo(s)
 		}})
 	// the extruded Star shows no parameters; "points" and "inner" are
 	// honoured when a design sets them
@@ -594,7 +609,7 @@ func init() {
 	register(&Kind{ID: "star3d", Label: "Star", Color: "#5bc0d6", Size: geom.V(38.04, 36.18, 10),
 		Params: []Param{
 			slider("points", "Points", 3, 20, 1, 5, true),
-			lslider("radius", "Radius", 1, 100, 0.5, 20, false),
+			lslider("radius", "Radius", 1, 100, 0.5, 20),
 			slider("inner", "Inner Radius(%)", 0.1, 0.95, 0.05, 0.5, false),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
@@ -611,11 +626,11 @@ func init() {
 	// shape generator: a gear with round (non-involute) teeth
 	register(&Kind{ID: "gear", Label: "Gear", Color: "#c8ccd0", Size: geom.V(27.44, 27.44, 20),
 		Params: []Param{
-			mslider("pitch", "Pitch", 0.5, 10, 0.1, 2, false),
-			lslider("slop", "Slop", 0, 1, 0.01, 0.01, false),
+			mslider("pitch", "Pitch", 0.5, 10, 0.1, 2),
+			lslider("slop", "Slop", 0, 1, 0.01, 0.01),
 			slider("teeth", "# of Teeth", 6, 100, 1, 20, true),
-			lslider("height", "Height", 1, 200, 1, 20, false),
-			lslider("bore", "Bore Dia", 0, 50, 0.5, 6, false),
+			lslider("height", "Height", 1, 200, 1, 20),
+			lslider("bore", "Bore Dia", 0, 50, 0.5, 6),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			// built at its own size in mm (the bore is in mm of that), then
@@ -639,8 +654,8 @@ func init() {
 		Params: []Param{
 			slider("angle", "Angle", 1, 180, 1, 90, false),
 			slider("steps", "Steps", 3, 64, 1, 18, true),
-			lslider("radius", "Radius", 1, 100, 0.5, 10, false),
-			lslider("thickness", "Thickness", 0.1, 20, 0.1, 1, false),
+			lslider("radius", "Radius", 1, 100, 0.5, 10),
+			lslider("thickness", "Thickness", 0.1, 20, 0.1, 1),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			ri, ro := shellRadii(v.Get("radius", 10), v.Get("thickness", 1))
@@ -653,9 +668,9 @@ func init() {
 	// shape generator: Height, Outer Radius, Inner Radius (mm) and Sides
 	register(&Kind{ID: "hyperboloid", Label: "Hyperboloid", Color: "#3fae2a", Size: geom.V(20, 20, 20),
 		Params: []Param{
-			lslider("height", "Height", 1, 200, 1, 20, false),
-			lslider("outer", "Outer Radius", 1, 100, 0.5, 10, false),
-			lslider("inner", "Inner Radius", 0.5, 100, 0.5, 5, false),
+			lslider("height", "Height", 1, 200, 1, 20),
+			lslider("outer", "Outer Radius", 1, 100, 0.5, 10),
+			lslider("inner", "Inner Radius", 0.5, 100, 0.5, 5),
 			slider("sides", "Sides", 3, 64, 1, 20, true),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {

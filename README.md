@@ -10,17 +10,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/scotticad/scotticad/releases/latest"><b>⬇ Download for Windows and Linux</b></a>
+  <a href="https://github.com/scotticad/scotticad/releases/latest"><b>Download for Windows and Linux</b></a>
   &nbsp;·&nbsp;
-  <a href="https://www.scotticad.com/"><b>🌐 www.scotticad.com</b></a>
+  <a href="https://www.scotticad.com/"><b>www.scotticad.com</b></a>
 </p>
 
 <p align="center">
-  <img src="docs/scotticad-demo.gif" alt="ScottiCAD: adding shapes, cutting a hole by grouping, measuring with the ruler, rotating and adding text" width="960">
+  <img src="docs/scotticad-demo.gif" alt="ScottiCAD: adding shapes, cutting a hole by grouping, measuring with the ruler, rotating, sketching an outline and adding text" width="960">
 </p>
 
 <p align="center">
-  <!-- RELEASE: badges update themselves once the first release is published -->
   <a href="https://github.com/scotticad/scotticad/releases/latest"><img src="https://img.shields.io/github/v/release/scotticad/scotticad?label=download&color=1b63b8" alt="Latest release"></a>
   <a href="https://www.scotticad.com/"><img src="https://img.shields.io/badge/website-www.scotticad.com-1b63b8" alt="Website: www.scotticad.com"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-2fa84f" alt="License: Apache-2.0"></a>
@@ -114,6 +113,8 @@ protractor, and line things up with the align tool.
   on-screen dimensions
 - A **ruler** you can drop anywhere, measuring to edges or midpoints
 - **Align**, **mirror**, snap grid and arrow-key nudging
+- **Patterns**: a shape repeated in a grid or round a circle, with the
+  count and spacing still adjustable afterwards
 - A **construction plane** you can put on any shape, lined up with its own
   axes, so you can build on tilted surfaces
 - **Notes** pinned to parts, for the details you'll forget
@@ -121,11 +122,19 @@ protractor, and line things up with the align tool.
 ### Made for 3D printing
 - **Export** to 3MF (with colours), STL, OBJ and GLB (glTF), or to SVG for
   laser cutting
-- **Import** STL, OBJ and SVG files, with the *Import* button or by
+- **Import** STL, OBJ, 3MF and SVG files, with the *Import* button or by
   dragging them onto the window (Windows)
 - Watertight exports, with holes and groups fully resolved
-- **Split** parts with a plane, **lay** any face flat on the build plate,
-  and look inside with **section view**
+- **Sketches**: draw your own outline with straight lines, Bézier curves
+  and smooth curves, then stand it up (tapered or twisted if you like),
+  spin it round a centre line (bowls, knobs, vases), or coil it (springs,
+  threads), with a live 3D preview as you draw a spun one. Cut holes
+  with outlines, flip, turn and mirror what you drew, and trace a photo
+  or scan set to its true size. Reopen the drawing to change it at any
+  time
+- **Split** parts with a plane, **stretch** them longer or shorter at
+  one, **lay** any face flat on the build plate, and look inside with
+  **section view**
 - A **filament estimate** in grams, metres and cost, from your slicer
   settings
 - A **print check** that flags holes in a part's surface (and marks
@@ -140,10 +149,10 @@ teardrop and more), text in several fonts, and ready-made parametric parts:
 
 | | |
 |---|---|
-| **Hardware & enclosures** | project box with lid, extruded box with end panels, PCB standoff, rounded plate, vent grille, hex nut and bolt, nut trap, countersunk and counterbored holes, keyhole slot, bearing seat |
+| **Hardware & Enclosures** | project box with lid, extruded box with end panels, PCB standoff, rounded plate, vent grille, hex nut and bolt, nut trap, countersunk and counterbored holes, keyhole slot, bearing seat, port opening, finishing washer, Gridfinity bins and baseplates |
 | **Mechanical** | involute spur, helical and herringbone gears, ring gear, bevel gears, gear rack, print-in-place planetary gear set, GT2 pulley, spring, pipe elbow, bent tube, knurled knob, print-in-place hinge, dovetail and pin joints |
 | **Parametric** | ISO metric thread, round-tooth gear, hyperboloid, spherical shell, square, diamond and honeycomb grids, diamond mesh, tube joint, fluted rod, puffy box, QR code |
-| **Computers & networking** | laptop, monitor, keyboard, server, equipment rack, router, switch, 3D printer and more |
+| **Computers & Networking** | laptop, monitor, keyboard, server, equipment rack, router, switch, 3D printer and more |
 
 Every part's controls (pitch, teeth, wall thickness…) stay editable after
 you place it. Search finds shapes by everyday words like *screw*, *enclosure*
@@ -187,7 +196,9 @@ favourites:
 | Hole / solid | H / S |
 | Duplicate | Ctrl+D |
 | Align / mirror | L / M |
+| Pattern | P |
 | Split with a plane | K (then X / Y / Z, Enter) |
+| Stretch at a plane | T (then X / Y / Z, Enter) |
 | Section view (see inside) | Shift+K |
 | Lay a face flat | Shift+D, then click the face |
 | Ruler / construction plane / notes | R / W / N |

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/scotticad/scotticad/pkg/shapes"
 )
 
 // Shared snapshots for undo history. Imported meshes are stored in the
@@ -67,8 +69,34 @@ func (s *BlobStore) Intern(ns []*Node) {
 					x.MeshData = d
 				}
 			}
+			if im := sketchImage(x); im != nil && len(im.Data) >= blobMin {
+				h := s.put(im.Data)
+				if d, ok := s.get(h); ok && d != im.Data {
+					x.Sketch = withImageData(x.Sketch, d) // (a sketch is replaced, never changed in place)
+				}
+			}
 		})
 	}
+}
+
+// A sketch's picture (a JPEG, hundreds of kilobytes) is kept in the store
+// the same way as a mesh.
+
+func sketchImage(x *Node) *shapes.SketchImage {
+	if x.Sketch == nil {
+		return nil
+	}
+	return x.Sketch.Image
+}
+
+// withImageData is sk with its picture's data replaced: a new Sketch,
+// sharing the paths (which are only read), so sk itself is untouched.
+func withImageData(sk *shapes.Sketch, data string) *shapes.Sketch {
+	c := *sk
+	im := *sk.Image
+	im.Data = data
+	c.Image = &im
+	return &c
 }
 
 // Reset forgets every stored mesh (when the history that refers to them
@@ -104,6 +132,9 @@ func (d *Document) MarshalShared(s *BlobStore) ([]byte, error) {
 			if len(x.MeshData) >= blobMin {
 				x.MeshData = blobPrefix + s.put(x.MeshData)
 			}
+			if im := sketchImage(x); im != nil && len(im.Data) >= blobMin {
+				x.Sketch = withImageData(x.Sketch, blobPrefix+s.put(im.Data))
+			}
 		})
 		c.Nodes[i] = cl
 	}
@@ -121,6 +152,13 @@ func UnmarshalShared(b []byte, s *BlobStore) (*Document, error) {
 			if h, ok := strings.CutPrefix(x.MeshData, blobPrefix); ok {
 				if data, ok := s.get(h); ok {
 					x.MeshData = data
+				}
+			}
+			if im := sketchImage(x); im != nil {
+				if h, ok := strings.CutPrefix(im.Data, blobPrefix); ok {
+					if data, ok := s.get(h); ok {
+						x.Sketch = withImageData(x.Sketch, data)
+					}
 				}
 			}
 		})

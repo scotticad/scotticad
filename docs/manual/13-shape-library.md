@@ -36,8 +36,13 @@ Most have a few settings in Properties. Some worth knowing:
 | **Slot** | A box with fully round ends. Its ends stay round whatever size you make it. Made a hole, it is a slot a screw can slide along |
 | **Arc** | Part of a ring: **Radius**, **Wall Thickness** (0 makes a pie slice) and **Angle**, from 1° to a full circle. Changing a setting keeps the arc's center where it is, so the arc grows or shrinks round it |
 | **Fillet** | A bar whose curved face fills an inside corner. See below |
-| **Teardrop** | A round bar lying on its side with a 45° point on top. See below |
+| **Teardrop** | A round bar lying on its side with a point on top, 45° unless you change it. See below |
 | **Crystal** | A quartz crystal: **Sides**, **Point Height**, **Taper**, **Double Pointed**, and **Irregularity** with **Seed**. See below |
+| **Rounded Box** | A box with its upright corners rounded, and its top and bottom edges rounded as much or as little as you like. See below |
+| **Crescent** | A crescent moon: **Thickness** across its back, and **Tip Radius** to blunt its horns |
+| **Sketch** | An outline you draw yourself, standing straight up: **Quality**, **Top Scale**, **Base Scale**, **Twist**, **Twist Mode** and **Twist Steps** ([Extruded sketches](03-shapes.md#extruded-sketches)). Dropping it opens the sketch workspace ([Sketches](03-shapes.md#sketches)) |
+| **Revolve Sketch** | A profile you draw, spun round a centre line: **Sides**, **Start**, **Sweep** and **Quality** ([Revolve sketches](03-shapes.md#revolve-sketches)) |
+| **Coil Sketch** | A profile you draw, spun round a centre line while it rises, for springs and threads: **Turns**, **Pitch**, **Sides a Turn**, **Start** and **Quality** ([Coil sketches](03-shapes.md#coil-sketches)) |
 
 Fewer sides or steps make a shape faceted, which can be a style in its
 own right. More make it smoother, and slower to combine in big groups.
@@ -61,6 +66,28 @@ hole fixes that: its top rises to a point at 45°, which prints without
 support. It arrives lying down, ready to use. **Flat Top** cuts the
 point off level with the top of the circle, which keeps the hole closer
 to round; the short flat roof bridges.
+
+**Tip Angle** is the angle between the point's two sides, from 40° to
+140°. At the usual 90° each side is at 45°. If your printer handles
+steeper overhangs, a wider angle (up to about 120°) keeps the point
+lower; a narrower one makes a taller, safer point.
+
+### The rounded box
+
+The **Box**'s **Radius** rounds every edge alike. The **Rounded Box**
+rounds them separately:
+
+- **Corner Radius** rounds the four upright corners.
+- **Top Edge Radius** and **Bottom Edge Radius** round the edges round
+  the top and the bottom. Leave the bottom at 0 so the box sits flat on
+  the plate.
+- **Steps** sets how smooth the rounding is.
+
+The radii are in millimetres and stay as they are when you resize the
+box: a 5 mm corner is still 5 mm on a box twice as long. A top edge
+rounds as far in as the corner radius and as far down as its own
+radius, so with different radii its curve is an ellipse, and with no
+corner radius the top and bottom stay square.
 
 ### The crystal
 
@@ -133,19 +160,136 @@ Cases, and the fittings that go on them.
 |---|---|
 | **Project Box** | A box with a lid: length, width, height, wall thickness and corner radius. Ungroup it to get the body and the lid as separate parts to print |
 | **Extruded Box** | A case in the style of an aluminium extrusion, with grooved sides, card slots inside and two end panels |
-| **PCB Standoff** | A post for mounting a circuit board, with a hole for the screw and a flange at the base |
+| **PCB Standoff** | A post for mounting a circuit board, with a hole for the screw and a flange at the base. **Gussets** (up to six) brace a tall post. See below |
 | **Rounded Plate** | A plate with rounded corners and a mounting hole in each |
 | **Vent Grille** | A panel of ventilation holes |
 | **Hex Nut**, **Hex Bolt** | Metric fasteners, by M size (and length, for the bolt) |
 | **Nut Trap** ◌ | A pocket that holds a nut, with the hole for its bolt |
-| **Countersunk Hole** ◌ | A hole for a flat-head screw |
-| **Counterbored Hole** ◌ | A hole with a recess for a cap-head screw |
+| **Countersunk Hole** ◌ | A hole for a flat-head screw, by M size or your own sizes. See below |
+| **Counterbored Hole** ◌ | A hole with a recess for a cap-head screw, by M size or your own sizes. See below |
 | **Keyhole Slot** ◌ | For hanging a part on a screw: a round hole the screw's head goes through, and a slot it slides along, where a lip holds the head. **Recess Depth** is the room behind the lip for the head to slide in |
 | **Bearing Seat** ◌ | A pocket a ball bearing presses into. See below |
+| **Port Opening** | The cut-out for a connector in a case's wall: USB, HDMI, RJ45 and others. See below |
+| **Finishing Washer** | A domed cup a countersunk screw's head sits in, for a neat fixing on a panel. See below |
+| **Gridfinity Bin**, **Gridfinity Baseplate** | Storage bins, and the grids they drop into, to the Gridfinity standard. See below |
 
 The five marked ◌ come as **holes**. Each cuts down into the top of a
 part: place it where the screw or bearing goes and group it with the
 part.
+
+### Screw holes
+
+The **Countersunk Hole** and the **Counterbored Hole** are sized by
+**Size (M)** for metric screws, with a little clearance added. **Depth**
+is how far the hole reaches down from the part's top.
+
+For other screws (wood screws, inch sizes), set **Screw** to **Custom**
+and type the hole's own sizes. These are used as they are, with no
+clearance added:
+
+- **Custom Shaft Dia**: the hole the screw's shank passes through.
+- **Custom Head Dia**: the width of the head's seat.
+- **Custom Head Angle** (countersunk): the angle of the cone. Metric and
+  most wood screws are 90°; many inch screws are 82°.
+- **Custom Head Depth** (counterbored): how deep the head's pocket is.
+
+**Recess** (countersunk, either way) carries the seat straight down
+below the surface, so the head sits a little below flush instead of
+level with it. About 0.5 mm hides a head that would otherwise stand
+proud.
+
+### The standoff's gussets
+
+**Gussets** adds up to six thin ribs from the post out along the floor,
+their tops sloping up to the post. They stop a tall standoff snapping
+off at its base. **Gusset Length** is how far they reach past the post,
+**Gusset Height** how far up the post they climb, and **Gusset
+Thickness** how thick each rib is. With many ribs on a thin post, the
+ribs are made thinner so they don't run into each other.
+
+### The finishing washer
+
+A **Finishing Washer** (a rosette or screw cup) sits under a countersunk
+screw's head on a panel: the head sinks into its seat, and the dome
+round it looks finished. Set **Outer Dia**, **Height**, **Hole Dia** for
+the screw's shank, **Seat Depth**, and **Seat Angle** to match the
+head (90° for metric screws). The seat can't go deeper than the washer
+allows: a thin ring is always kept under it. Print it seat up.
+
+### Gridfinity bins and baseplates
+
+Gridfinity is an open standard for workshop storage: bins on a 42 mm
+grid that drop into baseplates and stack on each other, so bins of any
+size, made by anyone, fit together. These two shapes are made to its
+measures, so they fit bins and baseplates printed from other designs.
+
+![Bins in a baseplate, and a bin with compartments](images/library-gridfinity.png)
+
+Size them with their settings, not with the handles: stretching one
+changes its measures, and it no longer fits the grid.
+
+The **Gridfinity Bin**:
+
+- **Units Long** and **Units Wide** are its size in grid squares. A
+  unit is 42 mm, and a bin is 0.5 mm less, so neighbours don't rub.
+- **Units High** is its height in 7 mm units, base included. A 3-unit
+  bin is 21 mm tall.
+- **Stacking Lip** adds the rim another bin's feet sit in, 4 mm above
+  that.
+- **Holes** puts holes under each grid square's foot: for 6 × 2 mm
+  magnets, which hold the bin in a magnet baseplate, for M3 screws, or
+  both.
+- **Wall** is the thickness of its sides.
+- **Compartments Along** and **Compartments Across** divide the inside
+  with walls.
+- **Scoop Radius** curves the floor up into the front of each
+  compartment, so small parts slide out under a fingertip.
+- **Label Shelf** adds a ledge this deep along the back of each
+  compartment, at the top, for a label. It slopes away underneath so it
+  prints without support.
+
+The **Gridfinity Baseplate**:
+
+- **Units Long** and **Units Wide** are its size in grid squares, 42 mm
+  each.
+- **Bottom** is **Open** (the lightest: only the grid of ridges),
+  **Solid** (a floor under the pockets, **Floor Thickness** thick), or
+  **Magnet Holes** (a floor with a hole for a 6 × 2 mm magnet under
+  each of a bin's).
+
+A drawer usually takes a few baseplates side by side, since a whole
+drawer's worth won't fit on a printer's bed.
+
+The tops of the stacking lip and of the baseplate's ridges are cut flat
+(0.4 and 0.25 mm wide) instead of coming to a knife edge, which printers
+can't make. Bins seat on the slopes below, so the fit is unchanged.
+
+### The port opening
+
+A **Port Opening** is the shape of a connector's opening seen from the
+front, standing up, with its depth running back through the wall. Make
+it a hole, push it through the wall where the socket is, and group it
+with the case.
+
+Choose the **Connector** from the list: USB-C (also with room for the
+plug), Micro-USB, USB-A, HDMI, Mini and Micro HDMI, DisplayPort and Mini
+DisplayPort, RJ45, the XT30, XT60, MT60 and MPX power plugs, D-Sub 9
+(with its two screw holes) and Anderson Powerpole blocks of one to four.
+Each opening is sized from the connector's published dimensions with a
+little room round it. HDMI openings have both lower corners cut off at
+a slant and DisplayPort openings their lower left one, as the plugs do,
+so they go in only one way up.
+
+- **Depth** is how far it reaches back. 10 mm cuts through most walls.
+- **Clearance** adds room on every side, if your printer makes holes
+  tight.
+- **Custom** in the Connector list uses the **Custom Width**, **Custom
+  Height**, **Custom Corner Radius** and **Custom Outline** settings
+  instead, for a connector that isn't listed. They have no effect while
+  a listed connector is chosen.
+
+Check the opening against the real connector before printing a case:
+sockets from different makers differ slightly.
 
 ### The bearing seat
 
@@ -184,7 +328,7 @@ Moving parts.
 | **Planetary Gear Set** | A sun gear, planets and a ring, already meshed. It prints in one piece, assembled |
 | **Pipe Elbow** | A curved pipe, by diameter, wall, bend radius and angle |
 | **Bent Tube** | A tube with any number of bends. See below |
-| **Spring** | A coil spring |
+| **Spring** | A coil spring. **Hand** winds it right-handed (the usual way) or left-handed |
 | **Knurled Knob** | A knob with a gripping edge |
 | **Hinge** | A hinge that prints in one piece, assembled |
 | **Bevel Gear** | A gear on a cone, for turning a drive through a right angle. See below |

@@ -91,8 +91,7 @@ func TestPlanetaryClearanceIsTheGap(t *testing.T) {
 	// turning the sun alone closes the gap on one side of its teeth: at
 	// the pitch circle the faces' gap c, square to them, is
 	// c / (cos α cos βb) round the circle
-	ring, sun, planets, d := planetarySet(t, map[string]float64{"thickness": 6})
-	_ = ring
+	_, sun, planets, d := planetarySet(t, map[string]float64{"thickness": 6})
 	betaB := math.Atan(math.Tan(d.helix*math.Pi/180) * math.Cos(gearAlpha))
 	free := d.clr / (math.Cos(gearAlpha) * math.Cos(betaB)) / (d.m * float64(d.zs) / 2)
 	for _, f := range []float64{0.8, 1.25} {

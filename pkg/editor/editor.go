@@ -670,6 +670,48 @@ func (e *Editor) SetSections(id int, ss []shapes.Section) error {
 	return e.edit(func() error { return doc.SetSections(n, ss) })
 }
 
+// AddSketchXf adds a sketch shape from its drawing, placed as
+// doc.AddSketch places it and then moved by xf, and selects it: one undo
+// step, or none if the drawing is refused.
+func (e *Editor) AddSketchXf(kind string, sk *shapes.Sketch, xf geom.Mat4, hole bool) (int, error) {
+	var id int
+	err := e.edit(func() error {
+		n, err := e.Doc.AddSketch(kind, sk, hole)
+		if err != nil {
+			return err
+		}
+		doc.Apply([]*doc.Node{n}, xf)
+		id = n.ID
+		return nil
+	})
+	if err == nil {
+		e.Select(id)
+	}
+	return id, err
+}
+
+// SetSketch replaces a sketch shape's drawing (see doc.SetSketch): one undo
+// step, or none if the drawing is refused.
+func (e *Editor) SetSketch(id int, sk *shapes.Sketch) error {
+	n := e.Doc.FindAny(id)
+	if n == nil {
+		return fmt.Errorf("no node %d", id)
+	}
+	if !shapes.IsSketch(n.Kind) {
+		return fmt.Errorf("node %d is not a sketch", id)
+	}
+	if e.locked(id) {
+		return errLocked
+	}
+	if err := shapes.CheckSketch(sk); err != nil {
+		return err
+	}
+	if !shapes.Buildable(n.Kind, sk) {
+		return doc.ErrNothingToBuild(n.Kind)
+	}
+	return e.edit(func() error { return doc.SetSketch(n, sk) })
+}
+
 // SetBends replaces a bent tube's bend table (see doc.SetBends): one undo
 // step, or none if the table is refused.
 func (e *Editor) SetBends(id int, bs []shapes.Bend) error {
@@ -695,7 +737,7 @@ func (e *Editor) SetBends(id int, bs []shapes.Bend) error {
 const HoleColor = "#a0a0a0"
 
 // AddShapeXf places a shape with its bottom centre at the origin, then
-// applies xf (used to drop shapes onto tilted faces) — one undo step.
+// applies xf (used to drop shapes onto tilted faces): one undo step.
 func (e *Editor) AddShapeXf(kind string, xf geom.Mat4, hole bool) (int, error) {
 	var id int
 	err := e.edit(func() error {
@@ -890,12 +932,70 @@ func (e *Editor) Group(mode string) (int, error) {
 	if mode == "" {
 		mode = doc.ModeUnion
 	}
-	if mode != doc.ModeUnion && mode != doc.ModeBundle && mode != doc.ModeIntersect {
+	if !doc.ValidMode(mode) {
 		return 0, fmt.Errorf("unknown group mode %q", mode)
 	}
 	var id int
 	err := e.edit(func() error {
 		g, err := e.Doc.Group(doc.IDs(ns), mode)
+		if err != nil {
+			return err
+		}
+		id = g.ID
+		return nil
+	})
+	if err == nil {
+		e.Select(id)
+	}
+	return id, err
+}
+
+// Pattern wraps the unlocked selection (one shape or more) in a pattern
+// group, which shows it repeated in a grid or round a circle, and selects
+// it. settings (nil for none) are pattern settings to start it with, as
+// SetParam takes them; the whole is one undo step.
+func (e *Editor) Pattern(settings map[string]float64) (int, error) {
+	ns := e.Editable()
+	if len(ns) == 0 {
+		return 0, errors.New("select a shape to repeat")
+	}
+	var id int
+	err := e.edit(func() error {
+		g, err := e.Doc.Pattern(doc.IDs(ns))
+		if err != nil {
+			return err
+		}
+		// in a fixed order, so the same mistake gives the same error
+		keys := make([]string, 0, len(settings))
+		for k := range settings {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if err := doc.SetPatternParam(g, k, settings[k]); err != nil {
+				return err
+			}
+		}
+		id = g.ID
+		return nil
+	})
+	if err == nil {
+		e.Select(id)
+	}
+	return id, err
+}
+
+// Stretch wraps the unlocked selection (or ids) in a stretch group, which
+// shows it lengthened by amount (shortened, if negative) at a plane square
+// to axis of the current plane at at (its coordinates), and selects it.
+func (e *Editor) Stretch(ids []int, axis int, at, amount float64) (int, error) {
+	ns := e.target(ids)
+	if len(ns) == 0 {
+		return 0, errors.New("select a shape to stretch")
+	}
+	var id int
+	err := e.edit(func() error {
+		g, err := e.Doc.Stretch(doc.IDs(ns), e.Work(), axis, at, amount)
 		if err != nil {
 			return err
 		}
@@ -920,27 +1020,35 @@ func (e *Editor) Ungroup() []int {
 	}
 	var ids []int
 	e.edit(func() error {
-		// a group's own notes go to its first child, staying put
-		type moved struct {
-			to    *doc.Node
-			world geom.Vec3
-			text  string
-		}
-		var notes []moved
+		// a group's own notes go to the first shape it releases, staying
+		// put (one group at a time: a stretch releases copies, not its
+		// children, so the children can't be named beforehand)
 		for _, id := range groups {
-			if g := e.Doc.Find(id); g != nil && len(g.Children) > 0 {
-				for _, nt := range g.Notes {
-					notes = append(notes, moved{g.Children[0], g.M.Point(g.NotePoint(nt.P)), nt.Text})
-				}
+			g := e.Doc.Find(id)
+			if g == nil {
+				continue
 			}
-		}
-		for _, n := range e.Doc.Ungroup(groups) {
-			doc.Normalize(n)
-			ids = append(ids, n.ID)
-		}
-		for _, m := range notes {
-			if inv, ok := m.to.M.Inverse(); ok {
-				m.to.Notes = append(m.to.Notes, doc.Note{P: m.to.NoteParam(inv.Point(m.world)), Text: m.text})
+			type moved struct {
+				world geom.Vec3
+				text  string
+			}
+			var notes []moved
+			for _, nt := range g.Notes {
+				notes = append(notes, moved{g.M.Point(g.NotePoint(nt.P)), nt.Text})
+			}
+			released := e.Doc.Ungroup([]int{id})
+			for _, n := range released {
+				doc.Normalize(n)
+				ids = append(ids, n.ID)
+			}
+			if len(released) == 0 {
+				continue
+			}
+			to := released[0]
+			if inv, ok := to.M.Inverse(); ok {
+				for _, m := range notes {
+					to.Notes = append(to.Notes, doc.Note{P: to.NoteParam(inv.Point(m.world)), Text: m.text})
+				}
 			}
 		}
 		return nil
@@ -955,12 +1063,18 @@ func (e *Editor) Ungroup() []int {
 	return ids
 }
 
-// SetGroupMode sets the mode (union, bundle or intersect) of the selected
-// unlocked groups.
+// SetGroupMode sets the mode (union, bundle, intersect or hull) of the
+// selected unlocked groups.
 func (e *Editor) SetGroupMode(mode string) error {
+	if !doc.ValidMode(mode) {
+		return fmt.Errorf("unknown group mode %q", mode)
+	}
 	return e.edit(func() error {
 		for _, n := range e.Editable() {
 			if n.IsGroup() {
+				if n.IsPattern() || n.IsStretch() {
+					n.Params = nil // the pattern's or stretch's numbers: no other group has them
+				}
 				n.GroupMode = mode
 			}
 		}
@@ -1362,6 +1476,10 @@ var errLocked = errors.New("that shape is locked")
 
 // locked reports whether node id (any depth) belongs to a locked
 // top-level shape.
+// Locked is whether node id can't be changed: it, or the top-level group
+// holding it, is locked.
+func (e *Editor) Locked(id int) bool { return e.locked(id) }
+
 func (e *Editor) locked(id int) bool {
 	for _, n := range e.Doc.Nodes {
 		found := false
@@ -1380,6 +1498,20 @@ func (e *Editor) param(id int, key string) (*doc.Node, *shapes.Param, error) {
 	}
 	if e.locked(id) {
 		return nil, nil, errLocked
+	}
+	if n.IsPattern() {
+		p, ok := doc.PatternParam(key)
+		if !ok {
+			return nil, nil, fmt.Errorf("a pattern has no parameter %q", key)
+		}
+		return n, p, nil
+	}
+	if n.IsStretch() {
+		p, ok := doc.StretchParam(key)
+		if !ok {
+			return nil, nil, fmt.Errorf("a stretch has no parameter %q", key)
+		}
+		return n, p, nil
 	}
 	kind := n.Kind
 	if n.IsGroup() && n.Assembly != "" {
@@ -1401,6 +1533,14 @@ func (e *Editor) setParam(id int, key string, v float64) error {
 	n, p, err := e.param(id, key)
 	if err != nil {
 		return err
+	}
+	if n.IsPattern() {
+		// its lengths are given as they measure, which a stretched pattern's
+		// stored ones aren't: checked against their range once stored
+		return doc.SetPatternParam(n, key, v)
+	}
+	if n.IsStretch() {
+		return doc.SetStretchParam(n, key, v)
 	}
 	if p.Int {
 		v = math.Round(v)
@@ -1690,8 +1830,8 @@ func (e *Editor) TurnRuler() {
 }
 
 // ToggleShapeWorkplane (the Construction plane on shape button) puts a
-// construction plane on the selected shape — its own axes, on its own
-// bottom, as the Construction plane tool does — or removes the current one.
+// construction plane on the selected shape (its own axes, on its own
+// bottom, as the Construction plane tool does) or removes the current one.
 func (e *Editor) ToggleShapeWorkplane() error {
 	switch {
 	case e.Workplane != nil:

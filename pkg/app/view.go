@@ -454,6 +454,7 @@ func (a *App) drawScene() {
 		}
 	}
 	a.drawSplitPlane()
+	a.drawStretchPlane()
 	a.drawSectionPlane()
 	a.drawLayFace()
 	a.drawMarkedEdges()

@@ -81,7 +81,7 @@ func qrCode(v Values) *geom.Mesh {
 	var cs [][]Pt
 	for _, c := range qrContours(d.sym, 0.02) {
 		out := make([]Pt, len(c))
-		for i, p := range c { // module (column, row) → the plate, row 0 at the back
+		for i, p := range c { // module (column, row) -> the plate, row 0 at the back
 			out[i] = Pt{-h + (p.X+float64(d.margin))*d.u, h - (p.Y+float64(d.margin))*d.u}
 		}
 		cs = append(cs, reversed(out)) // the rows run down: flipping Y reverses the winding

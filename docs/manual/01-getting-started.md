@@ -25,10 +25,10 @@ are ordinary files that you save where you like.
    list of keyboard shortcuts. The name beside it is the design's file
    name.
 2. **Editing buttons.** Copy, Paste, Duplicate, Delete, Undo and Redo.
-3. **Tools.** Hide and show, group and ungroup, split, section view,
-   align, mirror, place on surface, measure, construction plane, drop,
-   lay flat and the filament estimate. Each has a tooltip with its name
-   and key.
+3. **Tools.** Hide and show, group and ungroup, split, stretch, section view,
+   align, mirror, pattern, place on surface, measure, construction
+   plane, drop, lay flat and the filament estimate. Each has a tooltip
+   with its name and key.
 4. **Import, Export and Scripting.**
 5. **View buttons.** The view cube, then Home, Fit, Zoom in, Zoom out,
    flat or perspective view, and the center of rotation.
@@ -40,8 +40,9 @@ are ordinary files that you save where you like.
 7. **Properties.** Appears when something is selected: its name, whether
    it is a solid or a hole, its colour and its own settings.
 8. **The shape panel.** Shapes to drag onto the plate, a list of
-   libraries to choose from, and a search. The three buttons above it
-   are the construction plane, the ruler and notes.
+   libraries to choose from, and a search. Above it are two rows of
+   buttons: the construction plane, the ruler and notes, then the three
+   sketch tools for shapes you draw yourself.
 9. **Settings and Snap Grid.** The snap grid is the step that shapes move
    and resize by.
 

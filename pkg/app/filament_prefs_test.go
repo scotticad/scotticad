@@ -20,7 +20,7 @@ func TestFilamentPrefs(t *testing.T) {
 	}
 	s := filament.Defaults()
 	s.Material, s.Infill, s.PricePerKg, s.Walls = "PETG", 35, 24.5, 4
-	if err := writeFilamentPrefs(p, s); err != nil {
+	if err := writePrefs(p, s); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFilamentPrefs(p); got != s.Normalized() {
@@ -50,7 +50,7 @@ func TestFilamentPrefs(t *testing.T) {
 	// a folder where the file should be: an error, not a crash
 	bad := filepath.Join(dir, "blocked")
 	os.MkdirAll(filepath.Join(bad, "filament.json"), 0o755)
-	if err := writeFilamentPrefs(filepath.Join(bad, "filament.json"), s); err == nil {
+	if err := writePrefs(filepath.Join(bad, "filament.json"), s); err == nil {
 		t.Fatal("saved over a folder")
 	}
 }

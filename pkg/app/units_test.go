@@ -45,10 +45,11 @@ func TestInchStep(t *testing.T) {
 func TestLengthSlidersAreMarked(t *testing.T) {
 	notLength := map[string]bool{"sides": true, "steps": true, "segments": true, "teeth": true, "points": true, "turns": true,
 		"rows": true, "cols": true, "knurls": true, "knuckles": true, "slots": true, "grooves": true, "lid": true, "panels": true,
-		"pattern": true, "dshaft": true, "smooth": true, "angle": true, "puff": true, "taper": true, "taperturns": true,
+		"pattern": true, "dshaft": true, "smooth": true, "angle": true, "start": true, "sweep": true, "puff": true, "taper": true, "taperturns": true,
 		"tongs": true, "lobes": true, "rotation": true, "helix": true, "herringbone": true, "sun": true, "planet": true,
 		"planets": true, "flat": true, "point": true, "double": true, "irregular": true, "seed": true, "mate": true,
-		"flare": true, "margin": true}
+		"flare": true, "margin": true, "gussets": true, "unitsx": true, "unitsy": true, "unitsz": true, "compx": true, "compy": true,
+		"quality": true, "topscale": true, "basescale": true, "twist": true, "twiststeps": true}
 	for _, k := range shapes.All() {
 		for _, p := range k.Params {
 			if p.Kind != shapes.Slider || p.Length || p.Metric {
@@ -60,6 +61,7 @@ func TestLengthSlidersAreMarked(t *testing.T) {
 			case k.ID == "thread" && p.Key == "depth": // a scale
 			case p.Key == "size" && p.Label == "Size (M)": // a metric size's number
 			case k.ID == "tubejoint" && p.Key == "thick": // a percentage
+			case k.ID == "teardrop" && p.Key == "tip": // an angle (the crescent's tip is a length)
 			default:
 				t.Errorf("%s: %s (%s) isn't marked as a length", k.ID, p.Key, p.Label)
 			}

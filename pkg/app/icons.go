@@ -70,6 +70,35 @@ func (p pen) dashed(x0, y0, x1, y1 float64) {
 	p.b.Dashed(p.x(x0), p.y(y0), p.x(x1), p.y(y1), p.w*0.8, p.s(2), p.c)
 }
 
+// path draws a polyline given in design units.
+func (p pen) path(pts [][2]float64) {
+	q := make([][2]float64, len(pts))
+	for i, v := range pts {
+		q[i] = [2]float64{p.x(v[0]), p.y(v[1])}
+	}
+	p.b.Polyline(q, p.w, p.c)
+}
+
+// spline is a Catmull-Rom curve through pts, n steps per span, for the
+// icons' hand-drawn curves.
+func spline(pts [][2]float64, n int) [][2]float64 {
+	at := func(i int) [2]float64 { return pts[max(0, min(len(pts)-1, i))] }
+	var out [][2]float64
+	for i := 0; i+1 < len(pts); i++ {
+		p0, p1, p2, p3 := at(i-1), at(i), at(i+1), at(i+2)
+		for j := range n {
+			t := float64(j) / float64(n)
+			t2, t3 := t*t, t*t*t
+			var q [2]float64
+			for k := range 2 {
+				q[k] = 0.5 * (2*p1[k] + (p2[k]-p0[k])*t + (2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t2 + (3*p1[k]-p0[k]-3*p2[k]+p3[k])*t3)
+			}
+			out = append(out, q)
+		}
+	}
+	return append(out, pts[len(pts)-1])
+}
+
 // Icon names.
 const (
 	icCopy = iota
@@ -122,6 +151,29 @@ const (
 	icUnionGroupType
 	icBundleGroupType
 	icIntersectGroupType
+	icHullGroupType
+	icPattern
+	icStretch
+	icSkSelect
+	icSkLine
+	icSkBezier
+	icSkSmooth
+	icSkRefine
+	icSkPen
+	icSkEdit
+	icSkDims
+	icSkClose
+	icSkStroke
+	icSkCorner
+	icSkSmoothPt
+	icSkSplit
+	icSkClear
+	icSkImage
+	icSkHole
+	icSkMirrorTurn
+	icToolSketch
+	icToolRevolve
+	icToolCoil
 )
 
 // drawIcon draws an icon in one colour.
@@ -181,7 +233,7 @@ func drawIconAccent(b *render.Batch, id int, r render.Rect, c, accent render.Col
 		a.fillRect(4, 14, 16, 7, 1)
 		p.dashed(1, 12, 23, 12)
 	case icSection:
-		// a block cut open: the near half gone, the cut face hatched
+		// a block cut open: the near half gone, the cut face filled
 		p.rect(4, 4, 16, 16, 1)
 		a.fillRect(4, 12, 16, 8, 1)
 		p.dashed(1, 12, 23, 12)
@@ -267,6 +319,48 @@ func drawIconAccent(b *render.Batch, id int, r render.Rect, c, accent render.Col
 		p.poly(true, 3, 3, 21, 3, 21, 16, 12, 16, 7, 21, 7, 16, 3, 16)
 		p.line(7, 8, 17, 8)
 		p.line(7, 11.5, 14, 11.5)
+	case icToolSketch:
+		// an outline drawn by hand, the pencil finishing it
+		out := [][2]float64{{3, 21}}
+		out = append(out, spline([][2]float64{{3, 11}, {8, 7.5}, {11.5, 11}, {16.5, 12}, {19, 16.5}, {17, 21}}, 6)...)
+		a.path(append(out, [2]float64{3, 21}))
+		p.poly(true, 22.6, 3.1, 17.1, 8.6, 14.9, 6.4, 20.4, 0.9)
+		p.poly(false, 17.1, 8.6, 13.9, 9.6, 14.9, 6.4)
+	case icToolRevolve:
+		// a vase: the half you draw solid, the half the turn makes thin,
+		// on its dashed axis
+		half := spline([][2]float64{{12, 4}, {16.5, 4}, {15, 9}, {15.5, 13}, {19, 17}, {18.5, 20.5}, {12, 20.5}}, 5)
+		a.path(half)
+		mirror := make([][2]float64, len(half))
+		for i, v := range half {
+			mirror[i] = [2]float64{24 - v[0], v[1]}
+		}
+		thin := p
+		thin.w *= 0.5
+		thin.path(mirror)
+		p.dashed(12, 1.5, 12, 23)
+	case icToolCoil:
+		// a spring from the side: the front of each turn solid, the back thin
+		thin := a
+		thin.w *= 0.5
+		const turns, top, bot, n = 3, 5.0, 19.0, 72
+		var run [][2]float64
+		front := true
+		for i := 0; i <= n; i++ {
+			t := turns * 2 * math.Pi * float64(i) / n
+			q := [2]float64{12 - 8*math.Cos(t), top + (bot-top)*float64(i)/n + 2.6*math.Sin(t)}
+			run = append(run, q)
+			if f := math.Sin(t+math.Pi/n) >= 0; f != front || i == n {
+				switch {
+				case len(run) < 2:
+				case front:
+					a.path(run)
+				default:
+					thin.path(run)
+				}
+				run, front = [][2]float64{q}, f
+			}
+		}
 	case icSearch:
 		p.circle(10, 10, 6)
 		p.line(14.5, 14.5, 20.5, 20.5)
@@ -331,6 +425,143 @@ func drawIconAccent(b *render.Batch, id int, r render.Rect, c, accent render.Col
 		p.rect(3, 8, 12, 12, 1)
 		p.rect(9, 4, 12, 12, 1)
 		p.fillRect(9, 8, 6, 8, 0.5)
+	case icHullGroupType:
+		// two round shapes and the skin stretched between them
+		p.w *= 0.8
+		p.disc(8, 15, 5)
+		p.disc(17, 7, 3)
+		p.line(11.9, 18.1, 19.3, 8.9)
+		p.line(5.3, 10.8, 15.4, 4.5)
+	case icPattern:
+		// one shape, and its copies in rows and columns
+		a.fillRect(3, 3, 7, 7, 1)
+		p.rect(14, 3, 7, 7, 1)
+		p.rect(3, 14, 7, 7, 1)
+		p.rect(14, 14, 7, 7, 1)
+	case icStretch:
+		// a block parted at a dashed plane, arrows pushing its ends apart
+		p.rect(3, 7, 6, 10, 1)
+		a.fillRect(15, 7, 6, 10, 1)
+		p.dashed(12, 3, 12, 21)
+		p.line(1, 12, 3, 12)
+		p.poly(false, 2.5, 10, 0.5, 12, 2.5, 14)
+		p.line(21, 12, 23, 12)
+		p.poly(false, 21.5, 10, 23.5, 12, 21.5, 14)
+	case icSkSelect:
+		// a pointer arrow
+		a.fill(6, 3, 6, 19, 10, 15, 13, 21, 15.5, 20, 12.5, 14, 18, 14)
+	case icSkLine:
+		// straight lines between square points
+		p.poly(false, 4, 19, 10, 6, 20, 13)
+		for _, q := range [][2]float64{{4, 19}, {10, 6}, {20, 13}} {
+			a.fillRect(q[0]-2, q[1]-2, 4, 4, 0.5)
+		}
+	case icSkBezier:
+		// a curve, and the handle line that bends it
+		var pts []float64
+		for i := 0; i <= 16; i++ {
+			t := float64(i) / 16
+			u := 1 - t
+			x := u*u*u*3 + 3*u*u*t*6 + 3*u*t*t*18 + t*t*t*21
+			y := u*u*u*20 + 3*u*u*t*4 + 3*u*t*t*4 + t*t*t*20
+			pts = append(pts, x, y)
+		}
+		p.poly(false, pts...)
+		a.line(6, 4, 14, 4)
+		a.disc(6, 4, 1.8)
+		a.disc(14, 4, 1.8)
+		a.fillRect(10-1.8, 4-1.8, 3.6, 3.6, 0.5)
+	case icSkSmooth:
+		// a wave through round points
+		var pts []float64
+		for i := 0; i <= 20; i++ {
+			x := 3 + float64(i)*0.9
+			pts = append(pts, x, 12-6*math.Sin((x-3)/18*2*math.Pi))
+		}
+		p.poly(false, pts...)
+		for _, x := range []float64{3, 7.5, 16.5, 21} {
+			a.disc(x, 12-6*math.Sin((x-3)/18*2*math.Pi), 2)
+		}
+	case icSkRefine:
+		// a line with a point being added on it
+		p.line(3, 17, 21, 17)
+		a.fillRect(10, 15, 4, 4, 0.5)
+		a.line(12, 4, 12, 11)
+		a.line(8.5, 7.5, 15.5, 7.5)
+	case icSkPen:
+		// a pen nib drawing a line
+		a.fill(12, 3, 18, 11, 14, 19, 10, 19, 6, 11)
+		p.line(12, 9, 12, 14)
+		p.line(3, 21, 21, 21)
+	case icSkEdit:
+		// a pointer on a curve
+		p.arc(12, 13, 8, 150, 330)
+		a.fill(11, 8, 11, 21, 14, 18, 16, 22, 18, 21, 16, 17, 20, 17)
+		p.disc(5, 17, 1.8)
+	case icSkDims:
+		// a dimension: a line with arrowheads between two ticks
+		p.line(3, 6, 3, 18)
+		p.line(21, 6, 21, 18)
+		a.line(4, 12, 20, 12)
+		a.poly(false, 7, 9, 4, 12, 7, 15)
+		a.poly(false, 17, 9, 20, 12, 17, 15)
+	case icSkClose:
+		// a path round three sides, its last side the one that closes it
+		p.poly(false, 5, 19, 4, 6, 19, 4, 20, 18)
+		a.dashed(20, 18, 5, 19)
+		p.disc(5, 19, 1.8)
+		p.disc(20, 18, 1.8)
+	case icSkStroke:
+		// a broad line: two edges and its hatching
+		p.line(4, 15, 15, 4)
+		p.line(9, 20, 20, 9)
+		for _, k := range []float64{0, 3.5, 7, 10.5} {
+			a.line(6.5+k, 16.5-k, 8.5+k, 18.5-k)
+		}
+	case icSkHole:
+		// an area with a dashed outline cut out of it
+		p.rect(3, 3, 18, 18, 2)
+		a.dashed(8, 8, 16, 8)
+		a.dashed(16, 8, 16, 16)
+		a.dashed(16, 16, 8, 16)
+		a.dashed(8, 16, 8, 8)
+	case icSkMirrorTurn:
+		// a shape and its mirror image about a dashed line, a turn arrow
+		// over them
+		p.dashed(12, 9, 12, 22)
+		a.fill(10, 11, 10, 21, 3, 21)
+		p.poly(true, 14, 11, 14, 21, 21, 21)
+		p.arc(12, 9, 6, 200, 335)
+		p.fill(19.2, 5.1, 18.7, 9.2, 15.2, 6.9)
+	case icSkCorner:
+		// two straight sides meeting at a sharp point
+		p.poly(false, 3, 19, 12, 5, 21, 19)
+		a.fillRect(10, 3, 4, 4, 0.5)
+	case icSkSmoothPt:
+		// a curve through a point, its handles in one line
+		p.arc(12, 20, 10, 200, 340)
+		a.line(4, 10, 20, 10)
+		a.disc(4, 10, 1.6)
+		a.disc(20, 10, 1.6)
+		a.disc(12, 10, 2.2)
+	case icSkImage:
+		// a picture: its frame, a hill and the sun
+		p.rect(3, 5, 18, 14, 1.5)
+		a.poly(false, 4, 17, 9, 11, 13, 15, 16, 12, 20, 16)
+		a.disc(16, 9, 1.8)
+	case icSkClear:
+		// an eraser on a line
+		a.fill(10, 4, 20, 14, 13, 21, 3, 11)
+		p.line(8, 9, 15, 16)
+		p.line(13, 21, 21, 21)
+	case icSkSplit:
+		// a point whose two handles go their own ways
+		p.poly(false, 3, 20, 12, 12, 21, 20)
+		a.line(12, 12, 6, 4)
+		a.line(12, 12, 20, 6)
+		a.disc(6, 4, 1.6)
+		a.disc(20, 6, 1.6)
+		a.disc(12, 12, 2.2)
 	}
 }
 
@@ -345,7 +576,7 @@ var (
 )
 
 // drawLogo draws ScottiCAD's mark into r: an isometric cube, shaded in
-// three blues, with a round hole bored into its top face — a solid with a
+// three blues, with a round hole bored into its top face: a solid with a
 // hole cut from it.
 func drawLogo(b *render.Batch, r render.Rect) {
 	p := newPen(b, r, logoTop)

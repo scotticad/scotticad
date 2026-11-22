@@ -39,11 +39,13 @@ const (
 // IsTube reports whether a kind is built from a bend table.
 func IsTube(kind string) bool { return kind == "benttube" }
 
-// HasFrame reports a kind built from point data (an outline, a loft or a
-// bent tube): its data is in the shape's own frame, which changing the
-// data keeps. An arc has one too, with its circle's centre at the origin:
+// HasFrame reports a kind built from point data (an outline, a loft, a
+// bent tube or a sketch): its data is in the shape's own frame, which
+// changing the data keeps. An arc has one too, with its circle's centre at the origin:
 // changing its angle or radius keeps its centre where it is.
-func HasFrame(kind string) bool { return IsProfile(kind) || IsTube(kind) || kind == "arc" }
+func HasFrame(kind string) bool {
+	return IsProfile(kind) || IsTube(kind) || IsSketch(kind) || kind == "arc"
+}
 
 // CheckBends reports what is wrong with a bend table, if anything, in
 // words fit to show a script's author.
@@ -247,6 +249,9 @@ func FrameBounds(kind string, v Values) geom.Box {
 	if IsTube(kind) {
 		return TubeBounds(v)
 	}
+	if IsSketch(kind) {
+		return SketchBounds(kind, v)
+	}
 	if kind == "arc" {
 		return arcModel(catalogue["arc"].clamp(v)).Bounds()
 	}
@@ -265,9 +270,9 @@ var defaultBends = []Bend{{Length: 20, Angle: 90}, {Length: 20}}
 
 func init() {
 	k := &Kind{ID: "benttube", Label: "Bent Tube", Color: "#c0392b", bends: defaultBends, Params: []Param{
-		lslider("diameter", "Outer Dia", 1, 50, 0.5, 10, false),
-		lslider("wall", "Wall (0 is solid)", 0, 20, 0.1, 0, false),
-		lslider("bend", "Bend Radius", 0.5, 200, 0.5, 15, false),
+		lslider("diameter", "Outer Dia", 1, 50, 0.5, 10),
+		lslider("wall", "Wall (0 is solid)", 0, 20, 0.1, 0),
+		lslider("bend", "Bend Radius", 0.5, 200, 0.5, 15),
 		slider("sides", "Sides", 8, 64, 1, 32, true),
 	}}
 	k.build = func(size geom.Vec3, v Values) *geom.Mesh {

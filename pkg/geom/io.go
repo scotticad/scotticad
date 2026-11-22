@@ -235,11 +235,12 @@ func ReadOBJ(data []byte) (*Mesh, error) {
 				if err != nil {
 					return nil, fmt.Errorf("OBJ line %d: bad vertex %q", ln, s)
 				}
+				at := i
 				if i < 0 {
 					i = len(verts) + i + 1
 				}
 				if i < 1 || i > len(verts) {
-					return nil, fmt.Errorf("OBJ face index %d out of range", i)
+					return nil, fmt.Errorf("OBJ line %d: vertex %d out of range", ln, at)
 				}
 				ids = append(ids, i-1)
 			}

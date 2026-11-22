@@ -434,13 +434,13 @@ func TestPropertyBoxTransform(t *testing.T) {
 		}
 		for _, c := range b.Corners() {
 			if !in(m.Point(c)) {
-				t.Fatalf("case %d: corner %v → %v outside %v", i, c, m.Point(c), tb)
+				t.Fatalf("case %d: corner %v -> %v outside %v", i, c, m.Point(c), tb)
 			}
 		}
 		for k := 0; k < 10; k++ {
 			p := V(lo.X+r.Float64()*(b.Max.X-lo.X), lo.Y+r.Float64()*(b.Max.Y-lo.Y), lo.Z+r.Float64()*(b.Max.Z-lo.Z))
 			if !in(m.Point(p)) {
-				t.Fatalf("case %d: interior point %v → %v outside %v", i, p, m.Point(p), tb)
+				t.Fatalf("case %d: interior point %v -> %v outside %v", i, p, m.Point(p), tb)
 			}
 		}
 	}
@@ -559,7 +559,7 @@ func TestPropertySTLOBJRoundTrip(t *testing.T) {
 			t.Fatalf("case %d: ReadSTL: %v", i, err)
 		}
 		if len(s.Tris) != len(m.Tris) || math.Abs(vol(s)-v) > tol {
-			t.Errorf("case %d: STL %d→%d tris, volume %.9g→%.9g (tol %g)", i, len(m.Tris), len(s.Tris), v, vol(s), tol)
+			t.Errorf("case %d: STL %d->%d tris, volume %.9g->%.9g (tol %g)", i, len(m.Tris), len(s.Tris), v, vol(s), tol)
 		}
 
 		var ob, mb bytes.Buffer
@@ -572,7 +572,7 @@ func TestPropertySTLOBJRoundTrip(t *testing.T) {
 		}
 		// %g prints shortest float64 representation: exact
 		if len(o.Tris) != len(m.Tris) || math.Abs(vol(o)-v) > 1e-9*math.Max(1, math.Abs(v)) {
-			t.Errorf("case %d: OBJ %d→%d tris, volume %.12g→%.12g", i, len(m.Tris), len(o.Tris), v, vol(o))
+			t.Errorf("case %d: OBJ %d->%d tris, volume %.12g->%.12g", i, len(m.Tris), len(o.Tris), v, vol(o))
 		}
 		// every triangle comes back exactly (grouped by colour, so maybe in
 		// another order)

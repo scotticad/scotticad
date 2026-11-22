@@ -20,7 +20,7 @@
 #                        display, as the Python tests do)
 #   make install         install ./scotticad for this user, as the tarball's install.sh does
 #   make uninstall       remove it again
-#   make clean           remove everything the targets above built
+#   make clean           remove what was built (the test environment, .venv, stays)
 #
 # The Python tests drive the real program, which needs an X display: they run
 # under xvfb-run when it is installed (package xvfb), else on $DISPLAY (their
@@ -60,7 +60,7 @@ scotticad:
 	$(BUILD) -ldflags '$(LDFLAGS)' -o scotticad ./cmd/scotticad
 
 test: scotticad
-	$(GO) test ./pkg/...
+	$(GO) test ./...
 	test -x $(VENV)/bin/python || { $(PYTHON) -m venv $(VENV) && $(VENV)/bin/python -m pip install --quiet --disable-pip-version-check pytest; }
 	@if command -v xvfb-run >/dev/null; then \
 		xvfb-run -a -s "-screen 0 1920x1080x24" $(VENV)/bin/python -m pytest python/tests -q; \

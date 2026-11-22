@@ -1,0 +1,8 @@
+go test fuzz v1
+[]byte("\xb7\xd2<렉\xb7M\x06\xeay0")
+byte('\x02')
+float64(-80)
+float64(-6.285714285714286)
+float64(113)
+float64(24)
+float64(96)

@@ -34,10 +34,6 @@ def rect(cad, id):
     raise KeyError(id)
 
 
-def has(cad, id):
-    return any(c["id"] == id for c in cad.controls())
-
-
 def center(cad, id):
     x, y, w, h = rect(cad, id)
     return x + w / 2, y + h / 2
@@ -150,12 +146,13 @@ def drag_tile(cad, kind, x, y, z=0, drop=True, steps=8):
 def fresh(cad, target=(0, 0, 5), dist=150, yaw=None, pitch=None):
     while cad.ui_state()["popup"]:
         cad.key("esc")
+    if cad.sketch_state()["open"]:
+        cad.sketch_cancel()
     cad.set_tool("none")
     cad.new_design()
     cad.set_camera(target=list(target), dist=dist, yaw=yaw, pitch=pitch, ortho=False)
 
 
-VIEW = (0, 94, 1034, 706)  # the 3D view at this window size
 
 
 # --- the key tag used by the tutorial ---------------------------------------------
@@ -306,9 +303,14 @@ def looking(cad):
 
 def shapes(cad):
     fresh(cad)
-    marks = [(1, (1010, 122), center(cad, "tab-construction-plane")), (2, (1157, 152), center(cad, "tab-ruler")),
-             (3, (1262, 152), (1240, 126)), (4, (1010, 175), (1050, 175)), (5, (1262, 222), center(cad, "search")),
-             (6, (1010, 238), (1060, 238)), (7, (1010, 313), (1060, 313)), (8, (1010, 480), (1027, 447))]
+    sx, sy = center(cad, "tile-sketch")
+    lx, ly = center(cad, "library")
+    hy = center(cad, "tile-box-hole")[1]
+    by = center(cad, "tile-box")[1]
+    marks = [(1, (1010, 122), center(cad, "tab-construction-plane")), (2, (1198, 122), (1172, 122)),
+             (3, (1268, 122), (1254, 122)), (4, (1010, sy), (sx - 16, sy)), (5, (1010, ly), (1050, ly)),
+             (6, (1262, ly + 42), center(cad, "search")), (7, (1010, hy), (1060, hy)), (8, (1010, by), (1060, by)),
+             (9, (1010, 480), (1027, 447))]
     shot(cad, "shapes-panel", crop=(984, 94, 296, 500), marks=marks)
     cad.click_control("library")
     shot(cad, "shapes-library-menu", crop=(1034, 150, 246, 240))
@@ -450,9 +452,9 @@ def groups(cad):
     cad.clear_selection()
     b2 = view(cad, crop)
     side_by_side([a, b2], "groups-hole", labels=["A solid box and a hole cylinder", "Grouped: the hole is cut away"])
-    # the three group types
+    # the four group types
     imgs = []
-    for mode in ["bundle", "union", "intersect"]:
+    for mode in ["bundle", "union", "intersect", "hull"]:
         fresh(cad, target=(0, 0, 10), dist=150)
         b = cad.add_shape("box", x=-6)
         s = cad.add_shape("sphere", x=8)
@@ -461,11 +463,25 @@ def groups(cad):
         g = cad.group(mode, ids=[b, s])
         cad.clear_selection()
         imgs.append(view(cad, (347, 290, 340, 300)))
-    side_by_side(imgs, "groups-types", labels=["Bundle", "Union", "Intersect"])
+    side_by_side(imgs, "groups-types", labels=["Bundle", "Union", "Intersect", "Hull"])
     cad.select([g])
     marks = [(1, (818, 340), center(cad, "insp-gt-bundle")), (2, (866, 340), center(cad, "insp-gt-union")),
-             (3, (914, 340), center(cad, "insp-gt-intersect"))]
+             (3, (914, 340), center(cad, "insp-gt-intersect")), (4, (962, 340), center(cad, "insp-gt-hull"))]
     shot(cad, "groups-type-buttons", crop=(776, 96, 258, 270), marks=marks)
+    # a hull: shapes apart, wrapped
+    imgs = []
+    for mode in ["union", "hull"]:
+        fresh(cad, target=(11, 8, 4), dist=260)
+        c1 = cad.add_shape("cylinder", x=-15)
+        cad.set_size(x=30, y=30, z=10, ids=[c1])
+        c2 = cad.add_shape("cylinder", x=45)
+        cad.set_size(x=14, y=14, z=10, ids=[c2])
+        s = cad.add_shape("sphere", x=18, y=24)
+        cad.set_size(x=16, y=16, z=16, ids=[s])
+        cad.group(mode, ids=[c1, c2, s])
+        cad.clear_selection()
+        imgs.append(view(cad, (300, 250, 440, 330)))
+    side_by_side(imgs, "groups-hull", labels=["Three shapes in a union", "The same group as a hull"])
     # one colour, or each part's own
     imgs = []
     for multi in [False, True]:
@@ -477,6 +493,35 @@ def groups(cad):
         cad.clear_selection()
         imgs.append(view(cad, (330, 240, 340, 300)))
     side_by_side(imgs, "groups-multicolor", labels=["One color (the default)", "Multicolor on"])
+
+
+def patterns(cad):
+    """Chapter 5's pictures of patterns."""
+    imgs = []
+    # a grid of holes, grouped with a plate
+    fresh(cad, target=(4, 0, 2), dist=265)
+    plate = cad.add_shape("box")
+    cad.set_bounds([-45, -30, 0], [45, 30, 4], ids=[plate])
+    h = cad.add_shape("cylinder", hole=True)
+    cad.set_bounds([-39, -24, -5], [-33, -18, 15], ids=[h])
+    p = cad.pattern(columns=7, rows=5, dx=12, dy=10.5, ids=[h])
+    cad.group("union", ids=[plate, p])
+    cad.clear_selection()
+    imgs.append(view(cad, (300, 250, 440, 330)))
+    # blocks round a circle
+    fresh(cad, target=(4, 0, 2), dist=265)
+    hub = cad.add_shape("cylinder")
+    cad.set_bounds([-14, -14, 0], [14, 14, 10], ids=[hub])
+    cad.set_color("#f2a33a", ids=[hub])
+    b = cad.add_shape("box")
+    cad.set_bounds([20, -4, 0], [40, 4, 10], ids=[b])
+    p = cad.pattern("circle", count=8, radius=30, ids=[b])
+    cad.select([p])
+    imgs.append(view(cad, (300, 250, 440, 330)))
+    side_by_side(imgs, "groups-pattern", labels=["A grid of holes, grouped with a plate", "Eight blocks round a circle"])
+    # its settings
+    marks = [(1, (730, 112), center(cad, "pattern"))]
+    shot(cad, "groups-pattern-settings", crop=(700, 40, 334, 520), marks=marks)
 
 
 # --- 6: lining up and measuring ----------------------------------------------------
@@ -613,6 +658,139 @@ def cutting(cad):
              below(cad, 5, "section-close")]
     shot(cad, "section-view", crop=(120, 94, 760, 560), marks=marks)
     cad.set_section(False)
+
+
+def stretching(cad):
+    # an open shell with a notch in one end, lengthened through its middle
+    fresh(cad, target=(12, 0, 6), dist=170, yaw=-112, pitch=35)
+    shell = cad.add_shape("roundedbox")
+    cad.set_size(x=60, y=36, z=14, ids=[shell])
+    cad.set_position(x=-30, y=-18, z=0, ids=[shell])
+    inner = cad.add_shape("box", hole=True)
+    cad.set_size(x=56, y=32, z=14, ids=[inner])
+    cad.set_position(x=-28, y=-16, z=2, ids=[inner])
+    notch = cad.add_shape("box", hole=True)
+    cad.set_size(x=6, y=14, z=10, ids=[notch])
+    cad.set_position(x=26, y=-7, z=6, ids=[notch])
+    g = cad.group("union", ids=[shell, inner, notch])
+    cad.clear_selection()
+    settle(cad)
+    shot(cad, "stretch-before", crop=(230, 215, 560, 395))
+    cad.select([g])
+    cad.set_tool("stretch")
+    cad.click_control("stretch-amount")
+    cad.type_text("+30")
+    cad.key("enter")
+    park(cad)
+    marks = [below(cad, 1, "stretch-axis-x"), below(cad, 2, "stretch-amount"),
+             (3, (center(cad, "stretch-grip")[0] - 50, center(cad, "stretch-grip")[1] - 30), center(cad, "stretch-grip")),
+             below(cad, 4, "stretch-apply")]
+    shot(cad, "stretch-bar", crop=(80, 94, 760, 520), marks=marks)
+    cad.click_control("stretch-apply")
+    cad.clear_selection()
+    settle(cad)
+    shot(cad, "stretch-result", crop=(170, 205, 700, 405))
+
+
+# --- 3: sketches ----------------------------------------------------------------------
+
+class Board:
+    """Screen positions of a sketch's millimetres, the view set to center
+    (cx, cy) at zoom pixels per mm."""
+
+    def __init__(self, cad, cx, cy, zoom):
+        cad.sketch_view(cx, cy, zoom)
+        st = cad.sketch_state()
+        self.bx, self.by, self.bw, self.bh = st["board"]
+        # (read back: a revolve's or coil's center line stays two thirds
+        # across the board, whatever x is asked for)
+        (self.cx, self.cy), self.z = st["center"], st["zoom"]
+
+    def at(self, x, y):
+        return self.bx + self.bw / 2 + (x - self.cx) * self.z, self.by + self.bh / 2 - (y - self.cy) * self.z
+
+
+def sketching(cad):
+    # a bracket drawn as a user would: straight lines, one Bezier curve, a
+    # smooth-curve tab beside it, and a line with a width
+    fresh(cad, target=(20, 8, 6), dist=170, yaw=-115, pitch=38)
+    cad.edit_sketch(kind="sketch")
+    b = Board(cad, 6, 4, 9)
+    cad.sketch_tool("line")
+    for p in [(-20, -15), (30, -15), (30, 0)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("bezier")
+    x0, y0 = b.at(8, 22)
+    x1, y1 = b.at(-4, 22)
+    cad.drag(x0, y0, x1, y1, steps=6)
+    cad.sketch_tool("line")
+    for p in [(-20, 22), (-20, -15)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("smooth")
+    for p in [(-34, 4), (-29, -1), (-24, 4), (-29, 9), (-34, 4)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("line")
+    for p in [(36, -15), (44, 4)]:
+        cad.click(*b.at(*p))
+    cad.key("enter")
+    cad.sketch_tool("select")
+    cad.click(*b.at(8, 22))
+    park(cad)
+    bx, by = center(cad, "sk-back")
+    sx, sy = center(cad, "sk-sharp")
+    rx, ry = center(cad, "sk-redo")
+    marks = [(1, (rx + 40, ry), (rx + 14, ry)), below(cad, 2, "sk-zoom-in"), (3, (bx + 72, by), (bx + 38, by)),
+             (4, (sx, sy - 50), (sx, sy - 22)), (5, (75, H - 60), (20, H - 60))]
+    shot(cad, "sketch-workspace", crop=(0, 0, W, H), marks=marks)
+    # the line: round ends and corners, in the stroke settings
+    cad.key("esc")
+    cad.click(*b.at(40, -5.5))
+    cad.click_control("sk-stroke")
+    cad.click_control("sk-cap-Round")
+    cad.click_control("sk-join-Round")
+    park(cad)
+    shot(cad, "sketch-line-options", crop=(360, H - 157, 620, 125))
+    # a square hole in the bracket, and Mirror and turn open on the bracket
+    cad.key("esc")
+    cad.sketch_tool("line")
+    for p in [(2, -9), (14, -9), (14, 3), (2, 3), (2, -9)]:
+        cad.click(*b.at(*p))
+    cad.key("h")
+    cad.sketch_tool("select")
+    cad.click(*b.at(-20, 10))
+    cad.key("m")
+    park(cad)
+    shot(cad, "sketch-mirror-turn", crop=(285, 230, 800, 540))
+    cad.key("esc")
+    cad.sketch_done()
+    # a revolve: a bowl's half, left of the center line
+    cad.edit_sketch(kind="revolve", x=75)
+    b = Board(cad, -9, 10, 14)
+    cad.sketch_tool("line")
+    for p in [(0, 0), (-10, 0), (-10, 2)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("smooth")
+    for p in [(-20, 8), (-24, 20)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("line")
+    for p in [(-22, 20)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("smooth")
+    for p in [(-18, 10), (-8, 4)]:
+        cad.click(*b.at(*p))
+    cad.sketch_tool("line")
+    for p in [(0, 4), (0, 0)]:
+        cad.click(*b.at(*p))
+    cad.key("esc")  # out of Edit
+    cad.key("esc")  # nothing selected
+    park(cad)
+    shot(cad, "sketch-revolve", crop=(232, 94, 1048, 520))  # the drawing, the blanked third and the preview
+    bowl = cad.sketch_done()
+    cad.clear_selection()
+    settle(cad)
+    shot(cad, "sketch-result", crop=(150, 190, 800, 430))
+    cad.select([bowl])
+    shot(cad, "sketch-revolve-props", crop=(779, 100, 261, 410))
 
 
 # --- 8: files ----------------------------------------------------------------------
@@ -826,7 +1004,7 @@ def library_sheet(cad, library, name, per_row):
     img = grab(cad)
     d = ImageDraw.Draw(img)
     # the view's own buttons, at the left, are painted out
-    d.rectangle([0, 94, 70, 470], fill=img.getpixel((20, 520)))
+    d.rectangle([0, 94, 80, H], fill=img.getpixel((20, 520)))
     xs, ys = [], []
     for k, x, y in placed:
         px, py = cad.project(x, y - depth / 2 + 12, 0)
@@ -843,6 +1021,36 @@ def library_sheet(cad, library, name, per_row):
     x1, y1 = min(1034, max(xs) + 10), min(H, max(ys) + 12)
     save(img, name, crop=(x0, y0, x1 - x0, y1 - y0))
     cad.set_settings(show_grid=True)
+
+
+def gridfinity(cad):
+    """Chapter 13's Gridfinity pictures, and the Hardware library's sheet
+    they appear in."""
+    library_sheet(cad, "Hardware & Enclosures", "library-hardware", 6)
+    cad.click_control("library")
+    cad.click_control("lib-Basic Shapes")
+    cad.set_build_plate(200, 200)
+    imgs = []
+    # bins seated in a baseplate, one pocket left empty
+    fresh(cad, target=(0, 0, 8), dist=330, yaw=-112, pitch=40)
+    cad.add_shape("gridfinityplate")
+    for x, y, nx, kw in [(-21, 21, 2, {"compx": 2, "label": 10}), (42, 21, 1, {"scoop": 10}), (-42, -21, 1, {"unitsz": 5}),
+                         (0, -21, 1, {"unitsz": 2})]:
+        b = cad.add_shape("gridfinitybin", x=x, y=y, z=0)
+        cad.set_param(b, "unitsx", nx)
+        for k, v in kw.items():
+            cad.set_param(b, k, v)
+        cad.set_position(x=x - cad.node(b)["size"][0] / 2, y=y - 20.75, z=0, ids=[b])
+    cad.clear_selection()
+    imgs.append(view(cad, (290, 230, 460, 360)))
+    # compartments, scoops along their fronts and label shelves along their backs
+    fresh(cad, target=(0, 0, 4), dist=300, yaw=-80, pitch=55)
+    b = cad.add_shape("gridfinitybin")
+    for k, v in {"unitsx": 3, "unitsy": 2, "unitsz": 4, "compx": 3, "compy": 2, "scoop": 10, "label": 10}.items():
+        cad.set_param(b, k, v)
+    cad.clear_selection()
+    imgs.append(view(cad, (290, 230, 460, 360)))
+    side_by_side(imgs, "library-gridfinity", labels=["Bins in a baseplate", "Compartments, scoops and label shelves"])
 
 
 def libraries(cad):
@@ -870,9 +1078,10 @@ def keys(cad):
     cad.key("esc")
 
 
-CHAPTERS = {"keys": keys, "tour": tour, "tutorial": tutorial, "looking": looking, "shapes": shapes, "moving": moving, "groups": groups,
+CHAPTERS = {"keys": keys, "tour": tour, "tutorial": tutorial, "looking": looking, "shapes": shapes, "moving": moving, "groups": groups, "patterns": patterns,
             "precision": precision, "cutting": cutting, "files": files, "printing": printing, "settings": settings,
-            "scripting": scripting, "libraries": libraries}
+            "scripting": scripting, "libraries": libraries, "gridfinity": gridfinity, "stretching": stretching,
+            "sketching": sketching}
 
 
 def main():

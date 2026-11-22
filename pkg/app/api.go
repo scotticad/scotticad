@@ -33,7 +33,7 @@ import (
 // modeNames and popupNames are get_ui_state's names for the tool modes and
 // popups, in their constants' order.
 var (
-	modeNames  = []string{"none", "visibility", "measure", "ruler", "align", "mirror", "notes", "construction_plane", "split", "layflat", "orbit_center"}
+	modeNames  = []string{"none", "visibility", "measure", "ruler", "align", "mirror", "notes", "construction_plane", "split", "layflat", "orbit_center", "stretch"}
 	popupNames = []string{"", "visibility", "snap", "color", "font", "library", "design_menu", "settings", "import", "export", "help", "about", "start"}
 )
 
@@ -340,6 +340,17 @@ func nodeJSON(n *doc.Node, deep bool, top bool) map[string]any {
 	if len(n.Params) > 0 {
 		m["params"] = n.Params
 	}
+	if n.IsPattern() {
+		// its settings as set_param takes them, and how many times it shows
+		// its children
+		m["params"] = n.PatternValues()
+		m["copies"] = len(n.Copies())
+	}
+	if n.IsStretch() {
+		// its settings as set_param takes them (lengths in mm as they
+		// measure; at from the shapes' low end, unstretched)
+		m["params"] = n.StretchValues()
+	}
 	if n.Kind == "text" {
 		m["text"], m["font"] = n.Text, n.Font
 	} else if n.Text != "" { // a QR code
@@ -347,6 +358,9 @@ func nodeJSON(n *doc.Node, deep bool, top bool) map[string]any {
 	}
 	if len(n.Sections) > 0 {
 		m["sections"] = n.Sections
+	}
+	if n.Sketch != nil {
+		m["sketch"] = n.Sketch.Paths
 	}
 	if len(n.Bends) > 0 {
 		m["bends"] = n.Bends
@@ -587,7 +601,7 @@ func init() {
 			fn: func(a *App, p args) (any, error) { return ok2(a.ed.DeleteNote(p.i("id", 0), p.i("index", 0))) }},
 
 		// --- import and export
-		{Name: "import", Doc: "Import an STL, OBJ or SVG file onto the current plane; selects it.",
+		{Name: "import", Doc: "Import an STL, OBJ, 3MF or SVG file onto the current plane; selects it.",
 			Params: []apiParam{req("path", "string", ""), opt("x", "float", "mm"), opt("y", "float", "mm"), opt("scale", "float", "multiplier, default 1"),
 				opt("units", "string", "mm or in (STL/OBJ)"), opt("height", "float", "SVG extrusion height, mm")},
 			fn: func(a *App, p args) (any, error) {
@@ -603,7 +617,7 @@ func init() {
 		// --- selection
 		{Name: "select", Doc: "Replace the selection.", Params: []apiParam{req("ids", "int[]", "")}, fn: func(a *App, p args) (any, error) {
 			a.ed.Select(p.ids("ids")...)
-			return a.ed.Sel, nil
+			return idList(a.ed.Sel), nil
 		}},
 		{Name: "add_to_selection", Doc: "Add a shape to the selection (already selected: no change); returns the selection.", Params: []apiParam{req("id", "int", "")}, fn: func(a *App, p args) (any, error) {
 			id := p.i("id", 0)
@@ -615,7 +629,7 @@ func init() {
 			}
 			return append([]int{}, a.ed.Sel...), nil
 		}},
-		{Name: "select_all", Doc: "Select every visible shape.", fn: func(a *App, p args) (any, error) { a.ed.SelectAll(); return a.ed.Sel, nil }},
+		{Name: "select_all", Doc: "Select every visible shape.", fn: func(a *App, p args) (any, error) { a.ed.SelectAll(); return idList(a.ed.Sel), nil }},
 		{Name: "clear_selection", Doc: "Deselect everything.", fn: func(a *App, p args) (any, error) { a.ed.ClearSelection(); return ok() }},
 		{Name: "get_selection", Doc: "Selected ids and their combined bounds.", fn: func(a *App, p args) (any, error) {
 			return map[string]any{"ids": idList(a.ed.Sel), "bounds": boundsJSON(a.ed.SelectionBounds())}, nil
@@ -773,7 +787,7 @@ func init() {
 			a.withSel(p, func() { a.ed.SetName(p.s("name", "")) })
 			return ok()
 		}},
-		{Name: "set_param", Doc: "Set a shape parameter (see shape_kinds). A choice (a dropdown, such as a bearing seat's bearing) is set by its option's index in shape_kinds' options.", Params: []apiParam{req("id", "int", "node id (any depth)"), req("key", "string", ""), req("value", "float", "")},
+		{Name: "set_param", Doc: "Set a shape parameter (see shape_kinds). A choice (a dropdown, such as a bearing seat's bearing) is set by its option's index in shape_kinds' options. A pattern's settings are set this way too (see pattern): type (0 grid, 1 circle), columns, rows, dx, dy, stagger, count, radius, angle, turn. So are a stretch's (see stretch): axis (0 x, 1 y, 2 z, the group's own), at (the plane, mm from the shapes' low end), amount, length.", Params: []apiParam{req("id", "int", "node id (any depth)"), req("key", "string", ""), req("value", "float", "")},
 			fn: func(a *App, p args) (any, error) {
 				return ok2(a.ed.SetParam(p.i("id", 0), p.s("key", ""), p.f("value", 0)))
 			}},
@@ -794,7 +808,7 @@ func init() {
 		{Name: "show_all", Doc: "Show all hidden shapes (Ctrl+Shift+H).", fn: func(a *App, p args) (any, error) { a.ed.ShowAll(); return ok() }},
 
 		// --- grouping
-		{Name: "group", Doc: "Group the selection; returns the new group id.", Params: []apiParam{opt("mode", "string", `"union" (default), "bundle" or "intersect"`), idsParam},
+		{Name: "group", Doc: "Group the selection; returns the new group id.", Params: []apiParam{opt("mode", "string", `"union" (default), "bundle", "intersect" or "hull" (the shapes wrapped in one skin with no dents)`), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				if ids := a.nodesArg(p); ids != nil {
 					a.ed.Select(ids...)
@@ -808,15 +822,81 @@ func init() {
 			}
 			return map[string]any{"ids": a.ed.Ungroup()}, nil
 		}},
-		{Name: "set_group_mode", Doc: "Switch selected groups between union, bundle and intersect.", Params: []apiParam{req("mode", "string", "union, bundle or intersect"), idsParam},
+		{Name: "set_group_mode", Doc: "Switch selected groups between union, bundle, intersect and hull.", Params: []apiParam{req("mode", "string", "union, bundle, intersect or hull"), idsParam},
 			fn: func(a *App, p args) (any, error) {
 				m := p.s("mode", "")
-				if m != doc.ModeUnion && m != doc.ModeBundle && m != doc.ModeIntersect {
-					return nil, errors.New("mode must be union, bundle or intersect")
+				if !doc.ValidMode(m) {
+					return nil, errors.New("mode must be union, bundle, intersect or hull")
 				}
 				var err error
 				a.withSel(p, func() { err = a.ed.SetGroupMode(m) })
 				return ok2(err)
+			}},
+		{Name: "pattern", Doc: "Repeat the selection (one shape or more) in a grid or round a circle; returns the pattern's id. A pattern is a group that shows its shapes several times: change a shape in it or a setting (set_param on the pattern's id) and every copy follows. It keeps its copies apart, as a bundle does, so a pattern of a hole is a set of holes, which cut when the pattern is grouped with a solid. The shapes stay where they are, as the first copy; ungroup turns the copies into separate shapes. Settings left out start as a row of three, spaced by the shapes' size.",
+			Params: []apiParam{opt("type", "string", `"grid" (default) or "circle"`),
+				opt("columns", "int", "grid: copies along x, 1 to 50"), opt("rows", "int", "grid: copies along y, 1 to 50"),
+				opt("dx", "float", "grid: mm from one column to the next"), opt("dy", "float", "grid: mm from one row to the next"),
+				opt("stagger", "bool", "grid: every second row half a column along"),
+				opt("count", "int", "circle: copies, 1 to 200"), opt("radius", "float", "circle: mm; the center is this far to the -x side of the shapes"),
+				opt("angle", "float", "circle: degrees the copies are spread over; 360 (default) shares the full turn out, less puts a copy at each end"),
+				opt("turn", "bool", "circle: turn each copy with the circle (default true)"), idsParam},
+			fn: func(a *App, p args) (any, error) {
+				set := map[string]float64{}
+				if p.has("type") {
+					switch p.s("type", "") {
+					case "grid":
+						set["type"] = doc.PatternGrid
+					case "circle":
+						set["type"] = doc.PatternCircle
+					default:
+						return nil, errors.New("type must be grid or circle")
+					}
+				}
+				for _, k := range []string{"columns", "rows", "dx", "dy", "count", "radius", "angle"} {
+					if p.has(k) {
+						set[k] = p.f(k, 0)
+					}
+				}
+				for _, k := range []string{"stagger", "turn"} {
+					if p.has(k) {
+						set[k] = 0
+						if p.b(k, false) {
+							set[k] = 1
+						}
+					}
+				}
+				if ids := a.nodesArg(p); ids != nil {
+					a.ed.Select(ids...)
+				}
+				id, err := a.ed.Pattern(set)
+				return map[string]any{"id": id}, err
+			}},
+		{Name: "stretch", Doc: "Lengthen or shorten the selection at a plane square to an axis of the current plane; returns the stretch's id. A positive amount inserts that much at the plane: what is beyond it moves along the axis and the cut outline is carried straight across the gap, so walls running along the axis get longer. A negative amount removes a slab that thick centered on the plane and closes the gap. The low (-) end never moves. Give amount, or length for the length wanted along the axis (the difference is the amount). A stretch is a group: its shapes stay as they were inside it and its settings can be changed later (set_param on its id: axis, at, amount, length); ungroup bakes it in, turning only the shapes the plane crosses into meshes.",
+			Params: []apiParam{req("axis", "axis", "x, y or z (the current plane's)"), opt("at", "float", "where the plane crosses the axis, mm; default: the selection's center"),
+				opt("amount", "float", "mm to add (positive) or take out (negative)"), opt("length", "float", "the length wanted along the axis, mm (instead of amount)"), idsParam},
+			fn: func(a *App, p args) (any, error) {
+				ax, err := axisArg(p, "axis")
+				if err != nil {
+					return nil, err
+				}
+				b := doc.BoundsIn(a.targetNodes(p), a.ed.Work())
+				at := p.f("at", math.NaN())
+				if math.IsNaN(at) {
+					at = b.Center().Axis(ax)
+				}
+				var amount float64
+				switch {
+				case p.has("amount") && p.has("length"):
+					return nil, errors.New("give amount or length, not both")
+				case p.has("amount"):
+					amount = p.f("amount", 0)
+				case p.has("length"):
+					amount = p.f("length", 0) - b.Size().Axis(ax)
+				default:
+					return nil, errors.New("give amount or length")
+				}
+				id, err := a.ed.Stretch(a.nodesArg(p), ax, at, amount)
+				return map[string]any{"id": id}, err
 			}},
 		// --- split, lay flat and section view
 		{Name: "split", Doc: "Split shapes with a plane square to an axis of the current plane; each becomes two halves (groups of the shape and a hole box). Returns the halves' ids.",
@@ -935,7 +1015,7 @@ func init() {
 				return a.fil.settings, nil
 			}},
 		// --- clipboard and undo
-		{Name: "duplicate", Doc: "Ctrl+D; returns new ids.", fn: func(a *App, p args) (any, error) { return map[string]any{"ids": a.ed.Duplicate()}, nil }},
+		{Name: "duplicate", Doc: "Duplicate the selected shapes in place, as Ctrl+D (select them first); returns the new ids.", fn: func(a *App, p args) (any, error) { return map[string]any{"ids": a.ed.Duplicate()}, nil }},
 		{Name: "copy", Doc: "Ctrl+C.", fn: func(a *App, p args) (any, error) { a.ed.Copy(); return ok() }},
 		{Name: "cut", Doc: "Ctrl+X.", fn: func(a *App, p args) (any, error) { a.ed.Cut(); return ok() }},
 		{Name: "paste", Doc: "Ctrl+V (or Ctrl+Shift+V in place); returns new ids.", Params: []apiParam{opt("in_place", "bool", "")}, fn: func(a *App, p args) (any, error) {
@@ -977,9 +1057,9 @@ func init() {
 		{Name: "attach_construction_plane", Doc: "Put a construction plane on top-level shape id (its own axes, on its bottom); id 0 removes it, back to the build plate.",
 			Params: []apiParam{req("id", "int", "")},
 			fn:     func(a *App, p args) (any, error) { return ok2(a.ed.AttachWorkplane(p.i("id", 0))) }},
-		{Name: "set_tool", Doc: "Activate a tool mode.", Params: []apiParam{req("tool", "string", "none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, layflat, orbit_center, cruise")},
+		{Name: "set_tool", Doc: "Activate a tool mode (cruise switches on and off).", Params: []apiParam{req("tool", "string", "none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, stretch, layflat, orbit_center, cruise")},
 			fn: func(a *App, p args) (any, error) {
-				m := map[string]toolMode{"none": modeNone, "align": modeAlign, "mirror": modeMirror, "measure": modeMeasure, "visibility": modeVisibility, "ruler": modeRulerPlace, "notes": modeNotes, "construction_plane": modeWorkplane, "split": modeSplit, "layflat": modeLayFlat, "orbit_center": modeOrbitCenter}
+				m := map[string]toolMode{"none": modeNone, "align": modeAlign, "mirror": modeMirror, "measure": modeMeasure, "visibility": modeVisibility, "ruler": modeRulerPlace, "notes": modeNotes, "construction_plane": modeWorkplane, "split": modeSplit, "stretch": modeStretch, "layflat": modeLayFlat, "orbit_center": modeOrbitCenter}
 				t := p.s("tool", "")
 				if t == "cruise" {
 					a.cruise = !a.cruise
@@ -1023,6 +1103,7 @@ func init() {
 			}},
 		{Name: "home_view", Doc: "Home view.", fn: func(a *App, p args) (any, error) { a.homeCamera(false); return ok() }},
 		{Name: "fit_view", Doc: "Fit selection (or all) in view.", fn: func(a *App, p args) (any, error) {
+			a.layout() // (before the first frame the viewport has no size)
 			a.fitView()
 			if a.anim != nil {
 				a.cam = a.anim.to
@@ -1125,7 +1206,7 @@ func init() {
 			fn: func(a *App, p args) (any, error) {
 				a.Frame()
 				names := []string{"corner", "edge", "top", "lift", "rotate"}
-				var out []any
+				out := []any{}
 				for _, h := range a.computeHandles() {
 					if h.ok {
 						out = append(out, map[string]any{"kind": names[h.kind], "index": h.idx, "x": h.x, "y": h.y})
@@ -1172,13 +1253,17 @@ func init() {
 				a.simUp(buttonArg(p), p.f("x", 0), p.f("y", 0), modsArg(p))
 				return ok()
 			}},
-		{Name: "click", Doc: "Move, press and release.", Params: []apiParam{req("x", "float", ""), req("y", "float", ""), opt("button", "string", ""), opt("mods", "string[]", "")},
+		{Name: "click", Doc: "Move, press and release (double: twice, the second press as a double-click's).", Params: []apiParam{req("x", "float", ""), req("y", "float", ""), opt("button", "string", ""), opt("mods", "string[]", ""), opt("double", "bool", "")},
 			fn: func(a *App, p args) (any, error) {
 				a.Frame()
 				x, y, m, btn := p.f("x", 0), p.f("y", 0), modsArg(p), buttonArg(p)
 				a.simMove(x, y, m)
 				a.simDown(btn, x, y, m)
 				a.simUp(btn, x, y, m)
+				if p.b("double", false) {
+					a.simDownN(btn, x, y, m, true)
+					a.simUp(btn, x, y, m)
+				}
 				return ok()
 			}},
 		{Name: "drag", Doc: "Press at (x0,y0), move in steps to (x1,y1), release.",
@@ -1295,6 +1380,7 @@ func init() {
 			return ok()
 		}},
 	}
+	apiMethods = append(apiMethods, sketchCommands()...)
 }
 
 func ok2(err error) (any, error) {
@@ -1384,9 +1470,13 @@ func (a *App) simMove(x, y float64, m window.Mods) {
 	a.MouseMove(x*d, y*d, m)
 }
 
-func (a *App) simDown(btn int, x, y float64, m window.Mods) {
+func (a *App) simDown(btn int, x, y float64, m window.Mods) { a.simDownN(btn, x, y, m, false) }
+
+// simDownN presses a button, as the second press of a double-click if
+// double.
+func (a *App) simDownN(btn int, x, y float64, m window.Mods, double bool) {
 	d := a.w.DPI
-	a.MouseDown(btn, x*d, y*d, m, false)
+	a.MouseDown(btn, x*d, y*d, m, double)
 }
 
 func (a *App) simUp(btn int, x, y float64, m window.Mods) {

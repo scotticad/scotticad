@@ -23,7 +23,7 @@ func (d *Document) AddShape(kind string, pos geom.Vec3, hole bool) (*Node, error
 		d.Nodes = append(d.Nodes, g)
 		return g, nil
 	}
-	n := &Node{ID: d.newID(), Kind: k.ID, Params: v.Num, Text: v.Text, Font: v.Font, Sections: v.Sections, Bends: v.Bends, Size: k.Size, Color: k.Color, Hole: hole}
+	n := &Node{ID: d.newID(), Kind: k.ID, Params: v.Num, Text: v.Text, Font: v.Font, Sections: v.Sections, Bends: v.Bends, Sketch: v.Sketch, Size: k.Size, Color: k.Color, Hole: hole}
 	if k.ID == "text" {
 		n.Size = shapes.TextNaturalSize(n.Text, n.Font, n.Params["height"])
 	}
@@ -71,6 +71,61 @@ func SetSections(n *Node, ss []shapes.Section) error {
 // points where they were (see SetSections).
 func SetProfileParam(n *Node, key string, v float64) {
 	keepFrame(n, func() { SetParam(n, key, v) })
+}
+
+// AddSketch creates a sketch shape from its drawing (see shapes.Sketch),
+// placed with the drawing's origin at the design's: an extruded sketch
+// stands on the workplane there, and a revolve turns about the vertical
+// line through it, its drawing's heights kept (a profile drawn from 5 up
+// starts 5 above the workplane).
+func (d *Document) AddSketch(kind string, sk *shapes.Sketch, hole bool) (*Node, error) {
+	k, ok := shapes.Lookup(kind)
+	if !ok || !shapes.IsSketch(kind) {
+		return nil, errors.New("not a sketch kind: " + kind)
+	}
+	if err := shapes.CheckSketch(sk); err != nil {
+		return nil, err
+	}
+	if !shapes.Buildable(kind, sk) {
+		return nil, ErrNothingToBuild(kind)
+	}
+	v := k.Defaults()
+	v.Sketch = shapes.CopySketch(sk)
+	b := shapes.FrameBounds(kind, v)
+	c := b.Center()
+	z := c.Z - b.Min.Z // an extrusion: 0 up
+	if shapes.Spins(kind) {
+		z = c.Z
+	}
+	n := &Node{ID: d.newID(), Kind: kind, Params: v.Num, Sketch: v.Sketch, Size: b.Size(), Color: k.Color, Hole: hole,
+		M: geom.Translate(geom.V(c.X, c.Y, z))}
+	d.Nodes = append(d.Nodes, n)
+	return n, nil
+}
+
+// ErrNothingToBuild is the error for a drawing that makes no shape of kind.
+func ErrNothingToBuild(kind string) error {
+	if shapes.Spins(kind) {
+		return errors.New("the sketch has nothing left of its center line to spin")
+	}
+	return errors.New("the sketch has nothing to build: draw a closed outline or a line")
+}
+
+// SetSketch replaces a sketch shape's drawing. Like an outline's points,
+// the drawing is in the shape's own frame: what is unchanged stays where it
+// was, and a move, turn or resize the shape has had carries over.
+func SetSketch(n *Node, sk *shapes.Sketch) error {
+	if !shapes.IsSketch(n.Kind) {
+		return errors.New("not a sketch")
+	}
+	if err := shapes.CheckSketch(sk); err != nil {
+		return err
+	}
+	if !shapes.Buildable(n.Kind, sk) {
+		return ErrNothingToBuild(n.Kind)
+	}
+	keepFrame(n, func() { n.Sketch = shapes.CopySketch(sk) })
+	return nil
 }
 
 // SetBends replaces a bent tube's bend table. Like an outline's points,
@@ -296,14 +351,21 @@ func (d *Document) PasteJSON(data []byte, offset geom.Vec3) ([]*Node, error) {
 	return ns, nil
 }
 
-// Group combines top-level nodes into a group (mode union, bundle or
-// intersect). The children are kept intact so the group can be ungrouped
+// Group combines top-level nodes into a group (mode union, bundle,
+// intersect or hull). The children are kept intact so the group can be ungrouped
 // later.
 func (d *Document) Group(ids []int, mode string) (*Node, error) {
 	ns := d.FindAll(ids)
 	if len(ns) < 2 {
 		return nil, errors.New("select at least two shapes to group")
 	}
+	return d.group(ns, mode), nil
+}
+
+// group puts top-level nodes ns (at least one) in a new group, which takes
+// the first one's place in the list.
+func (d *Document) group(ns []*Node, mode string) *Node {
+	ids := IDs(ns)
 	c := Bounds(ns).Center()
 	if math.IsInf(c.X, 0) || math.IsNaN(c.X) {
 		c = geom.V(0, 0, 0)
@@ -321,7 +383,7 @@ func (d *Document) Group(ids []int, mode string) (*Node, error) {
 	if g.Color == "" {
 		g.Color = ns[0].Color
 	}
-	g.Hole = allHoles && mode != ModeBundle
+	g.Hole = allHoles && !g.IsBundle()
 	inv := geom.Translate(c.Neg())
 	pos := -1
 	for i, n := range d.Nodes {
@@ -340,10 +402,13 @@ func (d *Document) Group(ids []int, mode string) (*Node, error) {
 		pos = len(d.Nodes)
 	}
 	d.Nodes = append(d.Nodes[:pos], append([]*Node{g}, d.Nodes[pos:]...)...)
-	return g, nil
+	return g
 }
 
-// Ungroup dissolves groups one level, returning the released children.
+// Ungroup dissolves groups one level, returning the released children. A
+// pattern releases every copy as a shape of its own: its children first,
+// then the other copies in order. A stretch releases what it shows (see
+// ModeStretch).
 func (d *Document) Ungroup(ids []int) []*Node {
 	var released []*Node
 	var out []*Node
@@ -353,8 +418,26 @@ func (d *Document) Ungroup(ids []int) []*Node {
 	}
 	for _, n := range d.Nodes {
 		if set[n.ID] && n.IsGroup() {
+			if n.IsStretch() {
+				n = d.bakeStretch(n)
+			}
+			// the other copies, made from the children before they move
+			var copies []*Node
+			for i, t := range n.Copies() {
+				if i == 0 {
+					continue
+				}
+				for _, c := range n.Children {
+					k := c.Clone()
+					d.renumber(k)
+					k.M = n.M.Mul(t).Mul(c.M)
+					copies = append(copies, k)
+				}
+			}
 			for _, c := range n.Children {
 				c.M = n.M.Mul(c.M)
+			}
+			for _, c := range append(append([]*Node(nil), n.Children...), copies...) {
 				// what the group was, its parts are: a hole group's parts
 				// stay holes (made solid, they would fill what it cut)
 				c.Hole = c.Hole || n.Hole
@@ -569,8 +652,7 @@ func fuse(pieces []*geom.Mesh) *geom.Mesh {
 	for i, p := range pieces {
 		boxes[i], parent[i] = p.Bounds(), i
 	}
-	var find func(int) int
-	find = func(i int) int {
+	find := func(i int) int {
 		for parent[i] != i {
 			parent[i] = parent[parent[i]]
 			i = parent[i]
@@ -607,7 +689,7 @@ func fuse(pieces []*geom.Mesh) *geom.Mesh {
 // History is a bounded undo/redo stack of document snapshots.
 type History struct {
 	undo, redo [][]byte
-	// group is the undo depth where an open group (Begin) started, or -1
+	// group is the undo depth where an open group (Begin) started
 	group int
 	// start is where the group began (group drops below it while undo
 	// steps back past it, and comes back up with redo)

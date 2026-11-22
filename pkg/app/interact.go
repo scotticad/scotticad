@@ -49,7 +49,6 @@ type dragState struct {
 	onRing         bool
 	clickNode      int
 	wasSelected    bool
-	value          float64 // live value for labels (angle, elevation)
 }
 
 // --- handles ----------------------------------------------------------------
@@ -72,7 +71,7 @@ type handle struct {
 }
 
 func (a *App) showHandles() bool {
-	if len(a.ed.Sel) == 0 || a.mode == modeAlign || a.mode == modeMirror || a.mode == modeVisibility || a.mode == modeMeasure || a.mode == modeSplit {
+	if len(a.ed.Sel) == 0 || a.mode == modeAlign || a.mode == modeMirror || a.mode == modeVisibility || a.mode == modeMeasure || a.mode == modeSplit || a.mode == modeStretch {
 		return false
 	}
 	for _, n := range a.ed.Selected() {
@@ -207,6 +206,10 @@ type hit struct {
 }
 
 // pick finds the nearest shape under (x, y). Nodes in skip are ignored.
+// Where shapes are hit at the same distance (a duplicate sits exactly on
+// its original until moved), a selected one wins: otherwise a click on a
+// fresh duplicate would pick the original, which comes first in the design,
+// and dragging would select and move that one alone.
 func (a *App) pick(x, y float64, includeHidden bool, skip map[*doc.Node]bool) (hit, bool) {
 	r := a.ray(x, y)
 	best := hit{t: math.Inf(1)}
@@ -230,7 +233,7 @@ func (a *App) pick(x, y float64, includeHidden bool, skip map[*doc.Node]bool) (h
 			}
 			lr := geom.Ray{O: inv.Point(r.O), D: inv.Dir(r.D)}
 			t, ln, ok := lr.MeshWhere(p.Mesh, keep)
-			if ok && t < best.t {
+			if ok && nearer(t, best.t, a.ed.IsSelected(n.ID), best.node != nil && a.ed.IsSelected(best.node.ID)) {
 				nm := p.M.NormalMatrix().Dir(ln).Norm()
 				if nm.Dot(r.D) > 0 {
 					nm = nm.Neg()
@@ -240,6 +243,17 @@ func (a *App) pick(x, y float64, includeHidden bool, skip map[*doc.Node]bool) (h
 		}
 	}
 	return best, best.node != nil
+}
+
+// nearer is whether a hit at distance t beats the best so far at best:
+// nearer by more than a rounding error, or as near and selected where the
+// best isn't.
+func nearer(t, best float64, sel, bestSel bool) bool {
+	tie := 1e-9 * math.Max(1, math.Abs(t))
+	if math.Abs(t-best) <= tie {
+		return sel && !bestSel
+	}
+	return t < best
 }
 
 // pickPoint returns the surface or workplane point under the cursor.
@@ -359,6 +373,13 @@ func (a *App) viewPress(x, y float64, m window.Mods) {
 	}
 	// a click anywhere else closes an open note
 	a.closeNote()
+	if a.dbl && a.place == nil && a.mode == modeNone {
+		// a double-click on a sketch opens its drawing
+		if h, ok := a.pick(x, y, false, nil); ok && shapes.IsSketch(h.node.Kind) {
+			a.editSketch(h.node.ID)
+			return
+		}
+	}
 	if a.place != nil {
 		a.updatePlace(x, y)
 		a.commitPlace()
@@ -404,7 +425,7 @@ func (a *App) viewPress(x, y float64, m window.Mods) {
 			return
 		}
 		a.mode = modeNone
-	case modeSplit:
+	case modeSplit, modeStretch:
 		// clicking off the tool's controls leaves it, as Mirror does
 		a.setMode(modeNone)
 	}
@@ -560,7 +581,6 @@ func (a *App) dragMove(x, y float64, m window.Mods) {
 		dz := editor.Snap(s-d.s0, a.snap())
 		d.restore()
 		doc.Move(d.nodes, a.ed.Work().Dir(geom.V(0, 0, dz)))
-		d.value = d.box.Min.Z + dz
 	case dragRotate:
 		ang, dist := a.planeAngle(x, y, d.center, d.axis)
 		delta := (ang - d.aStart) * 180 / math.Pi
@@ -1033,6 +1053,11 @@ func (a *App) commitPlace() {
 	p := a.place
 	a.place = nil
 	if p == nil || !p.ok {
+		return
+	}
+	if shapes.IsSketch(p.kind) {
+		// drawn first, in the sketch workspace
+		a.newSketch(p.kind, p.xf, p.hole)
 		return
 	}
 	if _, err := a.ed.AddShapeXf(p.kind, p.xf, p.hole); err != nil {

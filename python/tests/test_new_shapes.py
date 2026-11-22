@@ -43,6 +43,10 @@ def search(cad, words):
     ("quartz", "tile-crystal"), ("keyhole", "tile-keyhole-hole"), ("608", "tile-bearingseat-hole"),
     ("bevel", "tile-bevelgear"), ("bevel", "tile-bevelpair"), ("gt2", "tile-gt2pulley"),
     ("dovetail", "tile-dovetail"), ("dowel", "tile-alignpin"), ("qr", "tile-qrcode"),
+    ("rounded box", "tile-roundedbox"), ("moon", "tile-crescent"), ("hdmi", "tile-port"),
+    ("usb", "tile-port"), ("rosette", "tile-finishingwasher"),
+    ("gridfinity", "tile-gridfinitybin"), ("gridfinity", "tile-gridfinityplate"),
+    ("drawer organizer", "tile-gridfinitybin"),
 ])
 def test_found_in_the_library(cad, words, tile):
     assert tile in search(cad, words)
@@ -101,3 +105,86 @@ def test_joint_sockets_are_holes(cad):
         g = cad.add_shape(kind)
         kids = [k for k in cad.nodes(deep=True) if k["id"] == g][0]["children"]
         assert [k["hole"] for k in kids] == [False, True], kind
+
+
+def test_port_opening(cad):
+    """The port opening is a solid tile in the Hardware library; its
+    connector list starts with Custom, picking a connector sizes it, and
+    Custom takes its own settings."""
+    kinds = {k["id"]: k for k in cad.shape_kinds()}
+    p = next(p for p in kinds["port"]["params"] if p["key"] == "connector")
+    assert p["kind"] == "choice" and p["options"][:3] == ["Custom", "USB-C", "USB-C Plug"]
+    hdmi = p["options"].index("HDMI")
+    s = cad.add_shape("port")
+    assert [round(v, 3) for v in cad.node(s)["size"]] == [9.4, 10, 3.7]  # USB-C
+    cad.set_param(s, "connector", hdmi)
+    assert [round(v, 3) for v in cad.node(s)["size"]] == [15.7, 10, 6.2]
+    assert cad.undo() and cad.node(s)["params"]["connector"] == 1
+    cad.set_param(s, "connector", 0)
+    cad.set_param(s, "width", 20)
+    cad.set_param(s, "clearance", 0.5)
+    assert [round(v, 3) for v in cad.node(s)["size"]] == [21, 10, 4.7]
+
+
+def test_rounded_box_and_crescent(cad):
+    for kind, size in (("roundedbox", [40, 30, 20]), ("crescent", [40, 40, 10])):
+        s = cad.add_shape(kind)
+        assert [round(v, 6) for v in cad.node(s)["size"]] == size, kind
+    b = cad.add_shape("roundedbox")
+    cad.set_param(b, "top", 3)
+    assert cad.node(b)["params"]["top"] == 3 and cad.node(b)["size"] == [40, 30, 20]
+
+
+def test_hardware_settings(cad):
+    """The settings added to the screw holes, the standoff, the spring and
+    the teardrop, and the finishing washer. Each new setting's default
+    leaves the shape as it was."""
+    w = cad.add_shape("finishingwasher")
+    assert [round(v, 6) for v in cad.node(w)["size"]] == [13.4, 13.4, 3.95]
+    # a custom countersink is its head's diameter across
+    c = cad.add_shape("countersink", hole=True)
+    metric = cad.node(c)["size"]
+    cad.set_param(c, "screw", 1)
+    cad.set_param(c, "head", 9)
+    assert round(cad.node(c)["size"][0], 6) == 9
+    assert cad.undo() and cad.undo() and cad.node(c)["size"] == metric
+    # four gussets reach past the flange
+    s = cad.add_shape("standoff")
+    plain = cad.node(s)["size"]
+    cad.set_param(s, "gussets", 4)
+    assert round(cad.node(s)["size"][0], 6) == 14 and cad.node(s)["size"][2] == plain[2]
+    # a left-hand spring is the same size
+    p = cad.add_shape("spring")
+    right = cad.node(p)["size"]
+    cad.set_param(p, "hand", 1)
+    assert [round(v, 6) for v in cad.node(p)["size"]] == [round(v, 6) for v in right]
+    # a sharper tip stands taller
+    t = cad.add_shape("teardrop")
+    tall = cad.node(t)["size"][2]
+    cad.set_param(t, "tip", 60)
+    assert cad.node(t)["size"][2] > tall
+
+
+def test_gridfinity(cad):
+    """A Gridfinity bin and baseplate: sizes in grid units, the settings
+    changing them, and a bin exporting as one closed part."""
+    b = cad.add_shape("gridfinitybin", y=-50)
+    # 2 x 1 units, 3 high (21 mm) and the stacking lip (4 mm, its edge cut flat)
+    assert [round(v, 6) for v in cad.node(b)["size"]] == [83.5, 41.5, 25]
+    cad.set_param(b, "unitsx", 3)
+    cad.set_param(b, "unitsz", 5)
+    assert [round(v, 6) for v in cad.node(b)["size"]] == [125.5, 41.5, 39]
+    cad.set_param(b, "lip", 0)
+    assert round(cad.node(b)["size"][2], 6) == 35
+    # inside settings leave the size alone
+    for key, value in [("compx", 3), ("compy", 2), ("scoop", 8), ("label", 12), ("holes", 3)]:
+        cad.set_param(b, key, value)
+    assert [round(v, 6) for v in cad.node(b)["size"]] == [125.5, 41.5, 35]
+    assert cad.undo() and cad.node(b)["params"]["holes"] == 0
+    p = cad.add_shape("gridfinityplate", y=50)
+    assert [round(v, 6) for v in cad.node(p)["size"]] == [126, 84, 4.75]
+    cad.set_param(p, "bottom", 2)
+    assert round(cad.node(p)["size"][2], 6) == 7.75
+    for part in (b, p):
+        assert cad.print_check(ids=[part])["parts"][0]["status"] == "ok"
+

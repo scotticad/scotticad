@@ -106,7 +106,7 @@ that read the interface's layout, and the ones for automated test runs.
 An assistant does better calling methods than clicking its way round the
 window.
 
-**`--mcp-tools core`** lists about 20 tools instead of nearly 60, for
+**`--mcp-tools core`** lists about 20 tools instead of more than 60, for
 assistants that do worse with a long list.
 
 The assistant can also read three **resources**:

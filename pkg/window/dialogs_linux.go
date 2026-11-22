@@ -221,8 +221,8 @@ func kdialogDialog(kdialog string, save bool, title, initial string, filters []f
 // Message shows a message box. kind: MsgOK, MsgYesNo or MsgYesNoCancel.
 // Returns IDOK, IDYes, IDNo or IDCancel. Closing the box is Cancel (No for
 // a Yes/No box), so a closed "Save changes?" never discards anything.
-// Without zenity or kdialog the text goes to stderr and the answer is
-// Cancel.
+// Without zenity or kdialog the text goes to stderr and the answer is the
+// one that changes nothing (Cancel; No for a Yes/No box; OK for an OK box).
 func (w *Window) Message(title, text string, kind int) int {
 	if path, err := exec.LookPath("zenity"); err == nil {
 		return zenityMessage(path, title, text, kind)

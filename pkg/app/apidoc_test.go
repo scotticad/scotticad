@@ -31,9 +31,13 @@ func TestAPIDoc(t *testing.T) {
 	if i < 0 {
 		t.Fatalf("%s has no generated part (the marker %q)", apiDocPath, apiDocMarker)
 	}
-	src, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
+	var src []byte
+	for _, f := range []string{"api.go", "sketchapi.go"} { // (the sketch methods' sections are in theirs)
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src = append(append(src, b...), '\n')
 	}
 	want := doc[:i] + apiDocMarker + "\n\n" + apiReference(string(src))
 	if want == doc {

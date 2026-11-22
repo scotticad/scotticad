@@ -1,0 +1,8 @@
+go test fuzz v1
+[]byte("\xea$\xdc{2\xa77\x8c9Ѓ_\xf7\xf02\x17\xa7/x0000\xfb000BX0000x00000000")
+byte('\x0e')
+float64(1)
+float64(0.3333333333333286)
+float64(0)
+float64(60)
+float64(0.875)

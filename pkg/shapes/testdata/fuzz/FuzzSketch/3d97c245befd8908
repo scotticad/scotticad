@@ -1,0 +1,8 @@
+go test fuzz v1
+[]byte("x\xe6\xed\x02a0\xe0Naa\x98t\xf4P0\x94\xb0\xb1\x8a1\x06\x0f\xe5.200\rQ000")
+byte('\r')
+float64(0.1)
+float64(5.333333333333333)
+float64(-99)
+float64(309)
+float64(1)

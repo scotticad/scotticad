@@ -22,7 +22,7 @@ Check 'go build'
 Write-Host 'built scotticad.exe'
 
 if ($Test) {
-    go test ./pkg/...
+    go test ./...
     Check 'go test'
     if (-not (Test-Path .venv)) {
         # the py launcher finds a real Python 3 even where "python" is only

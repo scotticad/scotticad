@@ -131,7 +131,15 @@ class Session:
     def op_group(self):
         f = self.rnd.random()
         if f < 0.5:
-            self.call(self.cad.group, self.rnd.choice(["union", "bundle", "intersect"]), ids=self.some_ids())
+            mode = self.rnd.choice(["union", "bundle", "intersect", "hull", "pattern"])
+            if mode == "pattern":
+                # small ones: a pattern of patterns multiplies
+                self.call(self.cad.pattern, self.rnd.choice(["grid", "circle"]), columns=self.rnd.randint(1, 2),
+                          rows=self.rnd.randint(1, 2), dx=self.rnd.uniform(-40, 40), count=self.rnd.randint(1, 3),
+                          radius=self.rnd.uniform(0, 40), angle=self.rnd.choice([360, 90]), stagger=self.rnd.random() < 0.5,
+                          turn=self.rnd.random() < 0.5, ids=self.some_ids())
+            else:
+                self.call(self.cad.group, mode, ids=self.some_ids())
         elif f < 0.8:
             self.call(self.cad.ungroup, ids=self.some_ids())
         else:
@@ -294,6 +302,74 @@ class Session:
                 for finding in p["findings"]:
                     assert finding["message"] and finding["tip"] and finding["severity"] in ("note", "warning"), p
 
+    def drawing(self):
+        """A random drawing: areas, lines and curves, crossing or not."""
+        paths = []
+        for _ in range(self.rnd.randint(1, 3)):
+            pts = []
+            for _ in range(self.rnd.randint(1, 7)):
+                p = [round(self.rnd.uniform(-25, 15), 1), round(self.rnd.uniform(-5, 30), 1)]
+                if self.rnd.random() < 0.4:
+                    h = [self.rnd.uniform(-8, 8), self.rnd.uniform(-8, 8)]
+                    pts.append({"p": p, "in": [-h[0], -h[1]], "out": h, "kind": self.rnd.choice(["corner", "smooth", "auto"])})
+                else:
+                    pts.append(p)
+            path = {"points": pts, "closed": self.rnd.random() < 0.6}
+            if self.rnd.random() < 0.3:
+                path.update(stroke=self.rnd.choice([0.4, 2, 5]), align=self.rnd.choice(["center", "inside", "outside"]),
+                            join=self.rnd.choice(["sharp", "round", "bevel"]), cap=self.rnd.choice(["flat", "round", "square"]))
+            paths.append(path)
+        return paths
+
+    def op_sketch(self):
+        """Sketches drawn from the API, redrawn, stretched, and drawn in the
+        workspace with the mouse and keys; the workspace is sometimes left
+        open for the next operations to run into."""
+        sketches = [n["id"] for n in self.cad.nodes() if n["kind"] in ("sketch", "revolve", "coil")]
+        f = self.rnd.random()
+        if f < 0.25:
+            self.call(self.cad.add_sketch, self.drawing(), kind=self.rnd.choice(["sketch", "revolve", "coil"]),
+                      x=self.rnd.uniform(-60, 60), y=self.rnd.uniform(-60, 60), hole=self.rnd.random() < 0.15)
+        elif f < 0.4 and sketches:
+            self.call(self.cad.set_sketch, self.rnd.choice(sketches), self.drawing())
+        elif f < 0.55:
+            amount = self.rnd.choice([None, 10, -5, 0, 40])
+            self.call(self.cad.stretch, self.rnd.choice("xyz"), amount=amount,
+                      length=self.rnd.uniform(5, 80) if amount is None else None, ids=self.some_ids())
+        else:
+            if not self.cad.sketch_state().get("open"):
+                if sketches and self.rnd.random() < 0.6:
+                    self.call(self.cad.edit_sketch, self.rnd.choice(sketches))
+                else:
+                    self.call(self.cad.edit_sketch, kind=self.rnd.choice(["sketch", "revolve", "coil"]),
+                              x=self.rnd.uniform(-40, 40))
+            for _ in range(self.rnd.randint(2, 10)):
+                g = self.rnd.random()
+                if g < 0.2:
+                    self.call(self.cad.sketch_tool, self.rnd.choice(["line", "bezier", "smooth", "select", "refine", "shape"]))
+                elif g < 0.5:
+                    x, y = self.point()
+                    self.call(self.cad.click, x, y, mods=self.rnd.choice([(), (), ("shift",)]))
+                elif g < 0.7:
+                    x0, y0 = self.point()
+                    self.call(self.cad.drag, x0, y0, x0 + self.rnd.uniform(-90, 90), y0 + self.rnd.uniform(-90, 90),
+                              steps=4, mods=self.rnd.choice([(), ("shift",), ("alt",)]))
+                elif g < 0.9:
+                    self.call(self.cad.key, self.rnd.choice(["ctrl+z", "ctrl+y", "ctrl+shift+z", "delete", "backspace",
+                                                             "esc", "enter", "ctrl+a", "p", "e", "left", "shift+up"]))
+                else:
+                    self.call(self.cad.sketch_view, self.rnd.uniform(-20, 20), self.rnd.uniform(-5, 30),
+                              self.rnd.choice([2, 5, 12, 40]))
+            if self.cad.sketch_state().get("open"):
+                g = self.rnd.random()
+                if g < 0.5:
+                    self.call(self.cad.sketch_done)
+                elif g < 0.8:
+                    self.call(self.cad.sketch_cancel)
+            st = self.cad.sketch_state()
+            if st.get("open"):
+                assert all(math.isfinite(c) for p in st["paths"] for q in p["points"] for c in q["p"]), st
+
     def op_script(self):
         src = self.rnd.choice(SCRIPTS)
         if "%d" in src:
@@ -317,7 +393,12 @@ class Session:
         if os.path.exists(path):
             os.remove(path)  # an export that fails mustn't leave an old file to import
         self.call(self.cad.export, path, selection_only=self.rnd.random() < 0.3)
-        if ext in ("stl", "obj", "svg") and os.path.exists(path):
+        # (Each import back doubles the design, and the next export fuses
+        # it all, so only three formats in five come back: with 3MF too,
+        # designs grow until an export takes minutes. test_release_0_4
+        # imports a 3MF. A huge export isn't imported either: repairing
+        # 400 000 triangles takes minutes, a cost measured elsewhere.)
+        if ext in ("stl", "obj", "svg") and os.path.exists(path) and os.path.getsize(path) < 5_000_000:
             self.call(self.cad.import_file, path, x=self.rnd.uniform(-40, 40), y=self.rnd.uniform(-40, 40))
 
     def op_interleave(self):
@@ -373,7 +454,7 @@ class Session:
 
     OPS = [(op_add, 14), (op_select, 10), (op_transform, 14), (op_group, 8), (op_appearance, 10), (op_notes, 4),
            (op_history, 10), (op_gui_drag, 10), (op_gui_click, 8), (op_key, 10), (op_tool, 8), (op_settings, 5),
-           (op_script, 4), (op_file, 2), (op_export, 2), (op_interleave, 5), (op_tube, 5)]
+           (op_script, 4), (op_file, 2), (op_export, 2), (op_interleave, 5), (op_tube, 5), (op_sketch, 8)]
 
     def step(self):
         total = sum(w for _, w in self.OPS)
@@ -440,6 +521,8 @@ def test_random_session(seed, tmp_path):
             except (AssertionError, ScottiCADError) as e:
                 raise AssertionError(f"seed {seed} step {i} ({name}): {e}\nlast ops: {log[-8:]}") from e
         # everything undoes, and redoes
+        if s.cad.sketch_state().get("open"):
+            s.cad.sketch_cancel()
         s.cad.set_tool("none")
         if s.cad.ui_state()["popup"]:
             s.cad.key("esc")

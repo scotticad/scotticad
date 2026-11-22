@@ -9,7 +9,7 @@ import (
 )
 
 // A tool panel is the small floating bar of options a tool shows over
-// the viewport (Split, Section view).
+// the viewport (Split, Stretch, Section view, the sketch workspace).
 
 type panelItemKind int
 
@@ -52,7 +52,7 @@ func (a *App) drawToolPanel(y float64, items []panelItem) render.Rect {
 	// centred in the viewport, or in the room left of the properties
 	// panel when it is showing, so its buttons are never underneath it
 	lo, hi := a.vp.X+64, a.vp.X+a.vp.W-8
-	if len(a.ed.Sel) > 0 {
+	if len(a.ed.Sel) > 0 && a.sk == nil {
 		hi = a.inspectorRect(0).X - 8
 	}
 	cx := (lo + hi) / 2

@@ -1,6 +1,6 @@
 # 6. Lining up and measuring
 
-[Contents](README.md) · Previous: [Holes and groups](05-holes-and-groups.md) · Next: [Split and section view](07-split-and-section.md)
+[Contents](README.md) · Previous: [Holes and groups](05-holes-and-groups.md) · Next: [Split, stretch and section view](07-split-and-section.md)
 
 Dragging gets shapes roughly into place. The tools in this chapter put
 them exactly where they belong: lined up with each other, a set distance
@@ -177,4 +177,4 @@ export.
 
 ---
 
-[Contents](README.md) · Previous: [Holes and groups](05-holes-and-groups.md) · Next: [Split and section view](07-split-and-section.md)
+[Contents](README.md) · Previous: [Holes and groups](05-holes-and-groups.md) · Next: [Split, stretch and section view](07-split-and-section.md)

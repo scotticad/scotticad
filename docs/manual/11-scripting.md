@@ -54,6 +54,8 @@ Everything goes through one object, `cad`. A few of its commands:
 | `cad.set_param(a, "radius", 2)` | Changes one of a shape's own settings |
 | `cad.set_hole(True, ids=[a])` | Makes a shape a hole |
 | `cad.group("union", ids=[a, b])` | Groups shapes and returns the group's id |
+| `cad.pattern(columns=4, dx=15, ids=[a])` | Repeats a shape in a grid (or `"circle"`) and returns the pattern's id |
+| `cad.stretch("x", amount=20, ids=[a])` | Makes shapes 20 mm longer at a plane through their middle (or `length=` to reach) and returns the stretch's id |
 | `cad.set_color("#2a7fd4", ids=[a])` | Sets a colour |
 | `cad.export("part.stl")` | Exports the design |
 
@@ -133,6 +135,29 @@ vase = cad.add_loft([(0, ring(20, 6)), (40, ring(28, 48)), (80, ring(12, 48)), (
 
 Once made, they behave like any other shape: you can move, resize, group
 and cut them with the mouse.
+
+A [sketch](03-shapes.md#sketches) can be made from a script too, with
+its curves. Each path is a list of points; a point is `(x, y)` for a
+sharp corner, or a dictionary with handles for a curve. `"kind": "auto"`
+makes a smooth curve through the points, as the Smooth curve tool does:
+
+```python
+# a 3 mm line with round ends, curving through three points
+cad.add_sketch([{"points": [{"p": (0, 0), "kind": "auto"}, {"p": (20, 10), "kind": "auto"},
+                            {"p": (40, 0), "kind": "auto"}], "stroke": 3, "cap": "round"}])
+
+# a knob: half its profile, left of x = 0, spun round
+knob = cad.add_sketch([{"points": [(0, 0), (-15, 0), (-15, 8), (-6, 12), (0, 12)], "closed": True}],
+                      kind="revolve", x=60)
+
+# a plate with a slot through it: a path with "hole" cuts instead of adding
+plate = cad.add_sketch([{"points": [(0, 0), (40, 0), (40, 20), (0, 20)], "closed": True},
+                        {"points": [(10, 5), (30, 5), (30, 15), (10, 15)], "closed": True, "hole": True}],
+                       y=40)
+```
+
+Unlike the outline, a sketch can be opened in the sketch workspace and
+changed with the mouse.
 
 ## Driving ScottiCAD from Python
 

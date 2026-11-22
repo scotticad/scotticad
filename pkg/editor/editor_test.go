@@ -146,10 +146,10 @@ func TestGeneratorParamKeepsScale(t *testing.T) {
 	if math.Abs(n.Size.X-76.08) > 0.02 || math.Abs(n.Size.Z-20) > 1e-6 {
 		t.Fatalf("after radius 40: %v", n.Size)
 	}
-	// six points: the footprint becomes the 6-point star's own (80 x 69.28)
+	// six points: the footprint becomes the 6-point star's own (69.28 x 80)
 	e.SetParam(id, "points", 6)
 	n = e.Doc.Find(id)
-	if math.Abs(n.Size.X-69.28) > 0.02 && math.Abs(n.Size.Y-69.28) > 0.02 {
+	if math.Abs(n.Size.X-69.28) > 0.02 || math.Abs(n.Size.Y-80) > 0.02 {
 		t.Fatalf("after 6 points: %v", n.Size)
 	}
 }

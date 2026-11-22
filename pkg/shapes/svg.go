@@ -323,24 +323,36 @@ func untangleN(c []Pt, budget *int) [][]Pt {
 func within(a, b []Pt) bool {
 	bb := boundsOf([][]Pt{b})
 	eps := 1e-6 * math.Max(1, math.Max(bb.x1-bb.x0, bb.y1-bb.y0))
+	onSide := func(p Pt, k int) bool { // p on b's side k
+		q, r := b[k], b[(k+1)%len(b)]
+		dx, dy := r.X-q.X, r.Y-q.Y
+		t := 0.0
+		if l := dx*dx + dy*dy; l > 0 {
+			t = math.Max(0, math.Min(1, ((p.X-q.X)*dx+(p.Y-q.Y)*dy)/l))
+		}
+		return math.Hypot(p.X-q.X-t*dx, p.Y-q.Y-t*dy) <= eps
+	}
+	inside := func(p Pt) bool { return PointInPolygon(p, b) }
 	onEdge := func(p Pt) bool {
 		for k := range b {
-			q, r := b[k], b[(k+1)%len(b)]
-			dx, dy := r.X-q.X, r.Y-q.Y
-			t := 0.0
-			if l := dx*dx + dy*dy; l > 0 {
-				t = math.Max(0, math.Min(1, ((p.X-q.X)*dx+(p.Y-q.Y)*dy)/l))
-			}
-			if math.Hypot(p.X-q.X-t*dx, p.Y-q.Y-t*dy) <= eps {
+			if onSide(p, k) {
 				return true
 			}
 		}
 		return false
 	}
+	if len(b) >= ringIndexMin {
+		// (long outlines: only the sides near each point are looked at)
+		x := newRingIndex(b)
+		inside = x.contains
+		onEdge = func(p Pt) bool {
+			return x.near(p.X-2*eps, p.Y-2*eps, p.X+2*eps, p.Y+2*eps, func(k int) bool { return onSide(p, k) })
+		}
+	}
 	for k := range a {
 		p, m := a[k], Pt{(a[k].X + a[(k+1)%len(a)].X) / 2, (a[k].Y + a[(k+1)%len(a)].Y) / 2}
 		for _, q := range []Pt{p, m} {
-			if !PointInPolygon(q, b) && !onEdge(q) {
+			if !inside(q) && !onEdge(q) {
 				return false
 			}
 		}
@@ -394,19 +406,33 @@ func outlinesMeet(a, b []Pt) bool {
 		return math.Min(p.X, q.X)-eps <= r.X && r.X <= math.Max(p.X, q.X)+eps &&
 			math.Min(p.Y, q.Y)-eps <= r.Y && r.Y <= math.Max(p.Y, q.Y)+eps
 	}
+	meet := func(p, q Pt, j int) bool { // a's side p-q and b's side j
+		r, s := b[j], b[(j+1)%len(b)]
+		if math.Max(r.X, s.X) < math.Min(p.X, q.X)-eps || math.Min(r.X, s.X) > math.Max(p.X, q.X)+eps ||
+			math.Max(r.Y, s.Y) < math.Min(p.Y, q.Y)-eps || math.Min(r.Y, s.Y) > math.Max(p.Y, q.Y)+eps {
+			return false
+		}
+		d1, d2, d3, d4 := side(p, q, r), side(p, q, s), side(r, s, p), side(r, s, q)
+		if d1*d2 < 0 && d3*d4 < 0 {
+			return true
+		}
+		return (d1 == 0 && onSeg(p, q, r)) || (d2 == 0 && onSeg(p, q, s)) || (d3 == 0 && onSeg(r, s, p)) || (d4 == 0 && onSeg(r, s, q))
+	}
+	var x *ringIndex
+	if len(a) >= ringIndexMin && len(b) >= ringIndexMin {
+		x = newRingIndex(b) // long outlines: each side of a against b's sides near it
+	}
 	for i := range a {
 		p, q := a[i], a[(i+1)%len(a)]
-		for j := range b {
-			r, s := b[j], b[(j+1)%len(b)]
-			if math.Max(r.X, s.X) < math.Min(p.X, q.X)-eps || math.Min(r.X, s.X) > math.Max(p.X, q.X)+eps ||
-				math.Max(r.Y, s.Y) < math.Min(p.Y, q.Y)-eps || math.Min(r.Y, s.Y) > math.Max(p.Y, q.Y)+eps {
-				continue
-			}
-			d1, d2, d3, d4 := side(p, q, r), side(p, q, s), side(r, s, p), side(r, s, q)
-			if d1*d2 < 0 && d3*d4 < 0 {
+		if x != nil {
+			if x.near(math.Min(p.X, q.X)-2*eps, math.Min(p.Y, q.Y)-2*eps, math.Max(p.X, q.X)+2*eps, math.Max(p.Y, q.Y)+2*eps,
+				func(j int) bool { return meet(p, q, j) }) {
 				return true
 			}
-			if (d1 == 0 && onSeg(p, q, r)) || (d2 == 0 && onSeg(p, q, s)) || (d3 == 0 && onSeg(r, s, p)) || (d4 == 0 && onSeg(r, s, q)) {
+			continue
+		}
+		for j := range b {
+			if meet(p, q, j) {
 				return true
 			}
 		}

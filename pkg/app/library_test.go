@@ -7,8 +7,8 @@ import (
 )
 
 // Every search keyword belongs to a shape that exists, every shape a user
-// can place is in a library besides All Shapes, and no library lists a
-// tile twice.
+// can place is in a library besides All Shapes (the sketches in none: they
+// have their own row of tools), and no library lists a tile twice.
 func TestLibrariesAndKeywords(t *testing.T) {
 	for kind := range shapeKeywords {
 		if _, ok := shapes.Lookup(kind); !ok {
@@ -25,6 +25,9 @@ func TestLibrariesAndKeywords(t *testing.T) {
 			if seen[tl] {
 				t.Errorf("%s lists %v twice", lib, tl)
 			}
+			if shapes.IsSketch(tl.kind) {
+				t.Errorf("%s lists %s, which has its own tool", lib, tl.kind)
+			}
 			seen[tl] = true
 			if lib != "All Shapes" {
 				in[tl.kind] = true
@@ -32,7 +35,7 @@ func TestLibrariesAndKeywords(t *testing.T) {
 		}
 	}
 	for _, k := range shapes.All() {
-		if !k.Hidden && !in[k.ID] {
+		if !k.Hidden && !in[k.ID] && !shapes.IsSketch(k.ID) {
 			t.Errorf("%s is only in All Shapes", k.ID)
 		}
 	}
@@ -80,13 +83,13 @@ func TestSearchTiles(t *testing.T) {
 // get_ui_state names every tool mode and popup: a constant added without
 // a name would make it index past the end.
 func TestUIStateNames(t *testing.T) {
-	if len(modeNames) != int(modeOrbitCenter)+1 {
-		t.Errorf("%d mode names for %d modes", len(modeNames), modeOrbitCenter+1)
+	if len(modeNames) != int(modeStretch)+1 {
+		t.Errorf("%d mode names for %d modes", len(modeNames), modeStretch+1)
 	}
 	if len(popupNames) != int(popStart)+1 {
 		t.Errorf("%d popup names for %d popups", len(popupNames), popStart+1)
 	}
-	if modeNames[modeNotes] != "notes" || modeNames[modeLayFlat] != "layflat" || modeNames[modeOrbitCenter] != "orbit_center" || popupNames[popLibrary] != "library" {
+	if modeNames[modeNotes] != "notes" || modeNames[modeLayFlat] != "layflat" || modeNames[modeOrbitCenter] != "orbit_center" || modeNames[modeStretch] != "stretch" || popupNames[popLibrary] != "library" {
 		t.Error("the names are out of step with the constants")
 	}
 }

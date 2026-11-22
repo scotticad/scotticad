@@ -1,9 +1,6 @@
 package app
 
 import (
-	"image"
-	"image/png"
-	"io"
 	"math"
 
 	"github.com/scotticad/scotticad/pkg/geom"
@@ -69,8 +66,6 @@ func (a *App) buildThumbs() {
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	a.target.Bind()
 }
-
-func encodePNG(w io.Writer, img image.Image) error { return png.Encode(w, img) }
 
 // setWindowIcons renders the logo offscreen and uses it as the window's
 // title-bar and taskbar icons.

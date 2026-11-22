@@ -4,6 +4,7 @@ package app
 
 import (
 	"bytes"
+	"image/png"
 	"math"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/scotticad/scotticad/pkg/geom"
 	"github.com/scotticad/scotticad/pkg/gl"
 	"github.com/scotticad/scotticad/pkg/render"
+	"github.com/scotticad/scotticad/pkg/shapes"
 	"github.com/scotticad/scotticad/pkg/window"
 )
 
@@ -56,6 +58,7 @@ const (
 	modeSplit       // the Split tool: cut the selection with a plane
 	modeLayFlat     // the Lay flat tool: click a face to lay it on the current plane
 	modeOrbitCenter // the view button: click once to set the center of rotation
+	modeStretch     // the Stretch tool: lengthen or shorten the selection at a plane
 )
 
 // App is the editor window.
@@ -132,9 +135,9 @@ type App struct {
 	pickHex      string
 	pickH, pickS float64
 	pickV        float64
-	// pickTarget, when set, takes the picker's colour (live: mid-drag)
+	// pickTarget, when set, takes the picker's colour
 	// instead of the selected shapes: the Settings background colour
-	pickTarget func(hex string, live bool)
+	pickTarget func(hex string)
 	bgPicker   bool     // the background colour picker is open in Settings
 	recent     []string // recent designs, newest first (see start.go)
 	// openDrop is the dialog dropdown whose list is open; dropList draws
@@ -182,6 +185,14 @@ type App struct {
 	con console
 	// the Split tool's plane and options
 	split splitState
+	// the Stretch tool's plane and amount
+	stretch stretchState
+	// sk is the sketch workspace, while it is open (see sketch.go); skClip
+	// is the paths copied in it
+	sk     *sketchSession
+	skClip []shapes.SketchPath
+	// dbl: the mouse press being handled is a double-click
+	dbl bool
 	// Section view (on or off, independent of the tool mode)
 	section sectionState
 	// the face the Lay flat tool would lay down
@@ -334,7 +345,7 @@ func (a *App) updateTitle() {
 	if a.ed.Dirty() {
 		name = "• " + name
 	}
-	a.w.SetTitle(name + " — ScottiCAD")
+	a.w.SetTitle(name + " - ScottiCAD")
 }
 
 func (a *App) showToast(s string) {
@@ -357,6 +368,16 @@ func (a *App) Resize(w, h int) {
 }
 
 func (a *App) Close() bool {
+	if a.sk != nil && a.sk.changed() {
+		switch a.ask("Finish the sketch you are drawing before closing?") {
+		case window.IDCancel:
+			return false
+		case window.IDYes:
+			if a.sketchDone(); a.sk != nil {
+				return false // it builds nothing: the workspace says why
+			}
+		}
+	}
 	if a.ed.Dirty() {
 		switch a.ask("Save changes to " + a.designName() + "?") {
 		case window.IDCancel:
@@ -416,7 +437,7 @@ func (a *App) MouseMove(x, y float64, m window.Mods) {
 		a.hoverNode, a.hoverHandle = 0, -1
 		a.w.Redraw()
 	}
-	if a.place != nil || a.mode == modeMeasure || a.mode == modeRulerPlace || a.mode == modeNotes {
+	if a.place != nil || a.mode == modeMeasure || a.mode == modeRulerPlace || a.mode == modeNotes || a.sk != nil {
 		a.w.Redraw()
 	}
 }
@@ -438,6 +459,15 @@ func (a *App) MouseDown(btn int, x, y float64, m window.Mods, double bool) {
 		return
 	}
 	a.dragBtn = btn // only this button's release ends what it starts
+	a.dbl = double
+	if a.sk != nil && btn != window.Left {
+		if a.sk.board.Contains(x, y) && a.popup == popNone {
+			a.commitField()
+			a.pressed = "sketch-pan"
+			a.pressDrag = a.skPan(x, y)
+		}
+		return
+	}
 	if btn != window.Left {
 		if a.vp.Contains(x, y) && a.popup == popNone {
 			a.commitField()
@@ -632,7 +662,16 @@ func (a *App) KeyDown(vk int, m window.Mods, repeat bool) {
 		a.closePopup()
 		return
 	}
-	if a.popup == popSettings || a.popup == popImport || a.popup == popExport || a.popup == popStart {
+	// a dialog over the design takes the keyboard: Delete behind Keyboard
+	// shortcuts would remove the selection unseen
+	switch a.popup {
+	case popSettings, popImport, popExport, popStart, popHelp, popAbout:
+		return
+	}
+	if a.sk != nil {
+		if a.popup == popNone {
+			a.sketchKey(vk, m)
+		}
 		return
 	}
 	a.w.Redraw()
@@ -640,6 +679,11 @@ func (a *App) KeyDown(vk int, m window.Mods, repeat bool) {
 	switch {
 	case a.mode == modeSplit && vk == vkReturn:
 		a.applySplit()
+	case a.mode == modeStretch && vk == vkReturn:
+		a.applyStretch()
+	case a.mode == modeStretch && !ctrl && (vk == 'X' || vk == 'Y' || vk == 'Z'):
+		a.stretch.axis = vk - 'X'
+		a.centreStretch()
 	case a.mode == modeSplit && !ctrl && (vk == 'X' || vk == 'Y' || vk == 'Z'):
 		a.split.axis = vk - 'X'
 		a.centreSplit()
@@ -678,8 +722,7 @@ func (a *App) KeyDown(vk int, m window.Mods, repeat bool) {
 	case ctrl && vk == 'N':
 		a.newDesign()
 	case ctrl && vk == 'E':
-		a.exportSel = len(ed.Sel) > 0
-		a.openPopup(popExport)
+		a.openExport()
 	case ctrl && vk == 'I':
 		a.openPopup(popImport)
 	case ctrl && (vk == vkUp || vk == vkDown):
@@ -713,6 +756,8 @@ func (a *App) KeyDown(vk int, m window.Mods, repeat bool) {
 		a.setMode(modeAlign)
 	case vk == 'M':
 		a.setMode(modeMirror)
+	case vk == 'P':
+		a.pattern()
 	case vk == 'C' && !repeat:
 		if a.place == nil {
 			a.cruise = !a.cruise
@@ -731,6 +776,8 @@ func (a *App) KeyDown(vk int, m window.Mods, repeat bool) {
 		a.setSection(!a.section.on)
 	case vk == 'K':
 		a.setMode(modeSplit)
+	case vk == 'T':
+		a.setMode(modeStretch)
 	case vk == vkPlus || vk == vkAdd:
 		a.zoomAt(a.vp.CX(), a.vp.CY(), 0.8)
 	case vk == vkMinus || vk == vkSub:
@@ -781,7 +828,8 @@ func (a *App) nudgeView(vk int, shift bool) {
 	a.ed.Nudge(axis, sign)
 }
 
-// openFileMenu toggles the File menu, dropping down from x.
+// openFileMenu opens the File menu, dropping down from x (or closes it,
+// if it is open).
 func (a *App) openFileMenu(x float64) {
 	a.menuX = x
 	a.openPopup(popDesignMenu)
@@ -812,7 +860,7 @@ func (a *App) setMode(m toolMode) {
 	if a.mode == m {
 		m = modeNone
 	}
-	if (m == modeAlign || m == modeMirror || m == modeSplit) && len(a.ed.Editable()) == 0 {
+	if (m == modeAlign || m == modeMirror || m == modeSplit || m == modeStretch) && len(a.ed.Editable()) == 0 {
 		return
 	}
 	a.mode = m
@@ -829,6 +877,9 @@ func (a *App) setMode(m toolMode) {
 	if m == modeSplit {
 		a.initSplit()
 	}
+	if m == modeStretch {
+		a.initStretch()
+	}
 	a.w.Redraw()
 }
 
@@ -840,8 +891,9 @@ func (a *App) designReplaced() {
 	a.field, a.pendingOpen = nil, nil
 	a.drag, a.pressDrag, a.pressed, a.pressRegion = nil, nil, "", nil
 	a.noteOpen = nil
+	a.skDropImageTexture()
+	a.sk = nil
 	a.section = sectionState{}
-	a.mode = modeNone
 	a.setMode(modeNone) // clears the tools' state
 	a.closePopup()
 }
@@ -896,6 +948,16 @@ func (a *App) group(mode string) {
 	}
 }
 
+// pattern makes the selection a pattern (a row of three to begin with)
+// and opens Properties on its settings.
+func (a *App) pattern() {
+	if _, err := a.ed.Pattern(nil); err != nil {
+		a.showToast(err.Error())
+		return
+	}
+	a.inspectorOpen, a.propsOpen = true, true
+}
+
 func (a *App) makeSolid() {
 	ns := a.ed.Editable()
 	a.ed.SetHole(false)
@@ -926,7 +988,7 @@ func (a *App) toggleTransparent() {
 }
 
 func (a *App) newDesign() {
-	if !a.saveChanges() {
+	if a.sketchInTheWay() || !a.saveChanges() {
 		return
 	}
 	a.ed.NewDesign()
@@ -934,7 +996,7 @@ func (a *App) newDesign() {
 }
 
 func (a *App) open() {
-	if !a.saveChanges() {
+	if a.sketchInTheWay() || !a.saveChanges() {
 		return
 	}
 	p, ok := a.openFile("Open design", "ScottiCAD designs (*.scotticad)", "*.scotticad", "All files", "*.*")
@@ -992,7 +1054,30 @@ func (a *App) restoreCamera() {
 	}
 }
 
+// sketchInTheWay reports, with a word to the user, that the sketch
+// workspace is open: a command that replaces the design, or adds a shape
+// to it behind the board, waits until the sketch is finished or cancelled
+// (it would throw the drawing away unasked).
+func (a *App) sketchInTheWay() bool {
+	if a.sk == nil {
+		return false
+	}
+	a.closePopup()
+	a.showToast("Finish or cancel the sketch first")
+	return true
+}
+
+// openExport opens the Export dialog, set to export the selection if
+// there is one.
+func (a *App) openExport() {
+	a.exportSel = len(a.ed.Sel) > 0
+	a.openPopup(popExport)
+}
+
 func (a *App) importFile(p string) {
+	if a.sketchInTheWay() {
+		return
+	}
 	// where the view's centre meets the workplane
 	pos := geom.Vec3{}
 	if a.vp.W > 0 {
@@ -1060,6 +1145,9 @@ func (a *App) layout() {
 		a.con.height = clampConsole(a.con.height, a.H-top)
 		a.vp.H = math.Max(50, a.vp.H-a.con.height)
 	}
+	if a.sk != nil {
+		a.skLayout()
+	}
 }
 
 func (a *App) Frame() {
@@ -1106,16 +1194,25 @@ func (a *App) Frame() {
 	gl.ClearColor(a.bgColor[0], a.bgColor[1], a.bgColor[2], 1)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-	a.drawScene()
+	if a.sk == nil {
+		a.drawScene()
+	}
 
 	gl.Viewport(0, 0, dw, dh)
 	a.batch.Begin(a.W, a.H)
-	a.drawViewportOverlay()
+	if a.sk != nil {
+		// the sketch workspace, in place of the view and the panels
+		a.drawSketch()
+	} else {
+		a.drawViewportOverlay()
+	}
 	if f := a.pendingOpen; f != nil {
 		a.pendingOpen = nil
 		f()
 	}
-	a.drawChrome()
+	if a.sk == nil {
+		a.drawChrome()
+	}
 	a.drawPopups()
 	a.drawTooltip()
 	a.drawToast()
@@ -1167,7 +1264,7 @@ func (a *App) screenshotData() ([]byte, error) {
 		img.Pix[i] = 255
 	}
 	var buf bytes.Buffer
-	if err := encodePNG(&buf, img); err != nil {
+	if err := png.Encode(&buf, img); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

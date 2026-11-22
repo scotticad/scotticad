@@ -170,6 +170,34 @@ class Client:
         (a point given twice in a row is a sharp corner)."""
         return self.call("add_outline", points=points, z0=z0, z1=z1, hole=hole)["id"]
 
+    def add_sketch(self, paths: Sequence, kind: str = "sketch", x: float = 0, y: float = 0,
+                   z: Optional[float] = None, hole: bool = False) -> int:
+        """Make a sketch shape from a drawing; returns its id.
+
+        paths is a list of {"points": [...], "closed": bool, "stroke": mm,
+        "align": "center" | "inside" | "outside", "join": "sharp" | "round"
+        | "bevel", "cap": "flat" | "round" | "square", "hole": bool}.
+
+        A point is [x, y] (a sharp corner) or {"p": [x, y], "in": [dx, dy],
+        "out": [dx, dy], "kind": "corner" | "smooth" | "auto"} with its
+        curve handles relative to it (auto: the curve flows through the
+        points).
+
+        A closed path is an area (areas join, one inside another too) unless it
+        has a stroke width; then it is a line on the path, or inside or
+        outside it as align says. An open path is a line, 2 mm wide unless
+        stroke says. A path with "hole": True cuts what it covers (its area
+        or its line) out of the rest of the drawing instead.
+
+        kind "sketch" extrudes the drawing 10 mm (resize to change);
+        "revolve" spins what is left of x = 0 round the vertical line
+        there; "coil" spins it while rising. Their other settings are set
+        with set_param: a sketch's quality, topscale, basescale, twist,
+        twistmode (0 steps, 1 smooth) and twiststeps; a revolve's sides,
+        start, sweep and quality; a coil's turns, pitch, sides, start and
+        quality. The drawing's origin goes at (x, y, z)."""
+        return self.call("add_sketch", paths=paths, kind=kind, x=x, y=y, z=z, hole=hole)["id"]
+
     def add_loft(self, sections: Sequence, hole: bool = False) -> int:
         """Join closed outlines at rising heights with straight walls and
         close the ends; returns its id.
@@ -285,6 +313,12 @@ class Client:
         tube. The tube's start stays where it was."""
         self.call("set_bends", id=id, bends=bends)
 
+    def set_sketch(self, id: int, paths: Sequence) -> None:
+        """Replace a sketch shape's drawing (paths as :meth:`add_sketch`).
+        The drawing is in the shape's own frame: what is unchanged stays
+        where it is."""
+        self.call("set_sketch", id=id, paths=paths)
+
     # -- visibility --------------------------------------------------------
 
     def hide(self, ids: Optional[Sequence[int]] = None) -> None:
@@ -299,14 +333,48 @@ class Client:
     # -- grouping and clipboard --------------------------------------------
 
     def group(self, mode: str = "union", ids: Optional[Sequence[int]] = None) -> int:
-        """mode: "union", "bundle" or "intersect". Returns the group id."""
+        """mode: "union", "bundle", "intersect" or "hull" (the shapes wrapped
+        in one skin with no dents). Returns the group id."""
         return self.call("group", mode=mode, ids=_ids(ids))["id"]
 
     def ungroup(self, ids: Optional[Sequence[int]] = None) -> list:
         return self.call("ungroup", ids=_ids(ids))["ids"]
 
     def set_group_mode(self, mode: str, ids: Optional[Sequence[int]] = None) -> None:
+        """mode: "union", "bundle", "intersect" or "hull"."""
         self.call("set_group_mode", mode=mode, ids=_ids(ids))
+
+    def pattern(self, type: Optional[str] = None, columns: Optional[int] = None, rows: Optional[int] = None,
+                dx: Optional[float] = None, dy: Optional[float] = None, stagger: Optional[bool] = None,
+                count: Optional[int] = None, radius: Optional[float] = None, angle: Optional[float] = None,
+                turn: Optional[bool] = None, ids: Optional[Sequence[int]] = None) -> int:
+        """Repeat the selection in a grid or round a circle; returns the
+        pattern's id. A pattern shows its shapes several times over: change
+        a shape in it, or a setting with set_param(id, key, value), and every
+        copy follows. A pattern of a hole is a set of holes.
+
+        type: "grid" (default) or "circle".
+        Grid: columns and rows (1 to 50), dx and dy (mm between columns and
+        between rows), stagger (every second row half a column along).
+        Circle: count (1 to 200), radius (mm; the center is that far to the
+        -x side of the shapes), angle (degrees the copies are spread over,
+        360 by default), turn (each copy turned with the circle, the default).
+        Settings left out start as a row of three spaced by the shapes' size."""
+        return self.call("pattern", type=type, columns=columns, rows=rows, dx=dx, dy=dy, stagger=stagger,
+                         count=count, radius=radius, angle=angle, turn=turn, ids=_ids(ids))["id"]
+
+    def stretch(self, axis: str, amount: Optional[float] = None, length: Optional[float] = None,
+                at: Optional[float] = None, ids: Optional[Sequence[int]] = None) -> int:
+        """Lengthen or shorten shapes at a plane square to an axis ("x", "y"
+        or "z") of the current plane, at `at` mm along it (default: the
+        selection's center); returns the stretch's id. A positive amount
+        inserts that many mm at the plane, the cut outline carried straight
+        across; a negative one removes a slab that thick centered on the plane
+        and closes the gap. Or give length: the length wanted along the axis.
+        The low (-) end stays put. The stretch is a group: change it later
+        with set_param(id, key, value) (axis, at, amount, length); ungroup
+        bakes it in."""
+        return self.call("stretch", axis=axis, amount=amount, length=length, at=at, ids=_ids(ids))["id"]
 
     def split(self, axis: str, at: Optional[float] = None, keep: str = "both", gap: float = 0,
               ids: Optional[Sequence[int]] = None) -> list:
@@ -426,7 +494,8 @@ class Client:
 
     def set_tool(self, tool: str) -> None:
         """none, align, mirror, measure, visibility, ruler, notes,
-        construction_plane, split, layflat, orbit_center or cruise."""
+        construction_plane, split, stretch, layflat, orbit_center or cruise
+        (which switches on and off)."""
         self.call("set_tool", tool=tool)
 
     # -- camera and output -------------------------------------------------
@@ -444,11 +513,13 @@ class Client:
     def fit_view(self) -> None:
         self.call("fit_view")
 
-    def screenshot(self, path: str) -> dict:
-        return self.call("screenshot", path=os.path.abspath(path))
+    def screenshot(self, path: Optional[str] = None) -> dict:
+        """Render the window to a PNG file at path, or without one return it
+        in the reply: {"png": base64 text, "width", "height", "dpi"}."""
+        return self.call("screenshot", path=os.path.abspath(path) if path else None)
 
     def project(self, x: float, y: float, z: float) -> tuple:
-        """World mm → window pixels (logical)."""
+        """World mm -> window pixels (logical)."""
         r = self.call("project", x=x, y=y, z=z)
         return r["x"], r["y"]
 
@@ -477,6 +548,50 @@ class Client:
     def click_control(self, id: str) -> None:
         self.call("click_control", id=id)
 
+    # -- the sketch workspace ----------------------------------------------
+
+    def edit_sketch(self, id: Optional[int] = None, kind: str = "sketch", x: float = 0, y: float = 0,
+                    z: Optional[float] = None) -> None:
+        """Open the sketch workspace on sketch shape id, or with no id on
+        a new drawing of kind whose origin goes at (x, y, z)."""
+        self.call("edit_sketch", id=id, kind=kind, x=x, y=y, z=z)
+
+    def sketch_state(self) -> dict:
+        """The workspace's state: open, paths, tool, the path being drawn,
+        the selected points and the view (board, center, zoom)."""
+        return self.call("sketch_state")
+
+    def sketch_tool(self, tool: str) -> None:
+        """Pick a tool: line, bezier or smooth (the Pen's), select or
+        refine (Edit's), or shape (neither: whole paths)."""
+        self.call("sketch_tool", tool=tool)
+
+    def sketch_view(self, x: float, y: float, zoom: float) -> None:
+        """Center the workspace's view on (x, y) mm at zoom px per mm."""
+        self.call("sketch_view", x=x, y=y, zoom=zoom)
+
+    def sketch_done(self) -> int:
+        """Build the shape from the drawing and close the workspace; returns
+        the shape's id."""
+        return self.call("sketch_done")["id"]
+
+    def sketch_cancel(self) -> None:
+        """Close the workspace, leaving the design as it was."""
+        self.call("sketch_cancel")
+
+    def sketch_image(self, path: Optional[str] = None, x: Optional[float] = None, y: Optional[float] = None,
+                     width: Optional[float] = None, angle: Optional[float] = None,
+                     opacity: Optional[float] = None) -> None:
+        """Load a picture (PNG or JPEG) under the open sketch's drawing, to
+        trace, or with no path place the one there: center x, y (mm), width
+        across (mm), angle (degrees anticlockwise), opacity (0 to 1)."""
+        self.call("sketch_image", path=os.path.abspath(path) if path else None, x=x, y=y, width=width,
+                  angle=angle, opacity=opacity)
+
+    def sketch_image_remove(self) -> None:
+        """Take the picture away from under the open sketch's drawing."""
+        self.call("sketch_image_remove")
+
     # -- input simulation (window coordinates, logical pixels) -------------
 
     def mouse_move(self, x: float, y: float, mods: Sequence[str] = ()) -> None:
@@ -488,8 +603,9 @@ class Client:
     def mouse_up(self, x: float, y: float, button: str = "left", mods: Sequence[str] = ()) -> None:
         self.call("mouse_up", x=x, y=y, button=button, mods=list(mods))
 
-    def click(self, x: float, y: float, button: str = "left", mods: Sequence[str] = ()) -> None:
-        self.call("click", x=x, y=y, button=button, mods=list(mods))
+    def click(self, x: float, y: float, button: str = "left", mods: Sequence[str] = (), double: bool = False) -> None:
+        """Move, press and release; with double, a double-click."""
+        self.call("click", x=x, y=y, button=button, mods=list(mods), double=double)
 
     def drag(self, x0: float, y0: float, x1: float, y1: float, steps: int = 10,
              button: str = "left", mods: Sequence[str] = ()) -> None:

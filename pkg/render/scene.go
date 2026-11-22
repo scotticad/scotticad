@@ -748,7 +748,7 @@ func (s *Scene) DrawOutlines(parts []MaskPart, fb uint32, x, y, w, h int32, radi
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.BLEND)
-	// draw lower-priority channels first so selection wins
+	// the channel drawn last wins where they overlap
 	for _, ch := range []int{2, 0, 1} {
 		for _, p := range parts {
 			if p.Channel != ch {

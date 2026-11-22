@@ -90,7 +90,6 @@ const (
 	wmChar           = 0x0102
 	wmSysKeyDown     = 0x0104
 	wmSysKeyUp       = 0x0105
-	wmTimer          = 0x0113
 	wmMouseMove      = 0x0200
 	wmLButtonDown    = 0x0201
 	wmLButtonUp      = 0x0202
@@ -515,7 +514,7 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		pDragFinish.Call(wParam)
 		w.h.DropFiles(paths, -1, -1)
 		return 0
-	case wmApp, wmTimer:
+	case wmApp:
 		return 0
 	}
 	r, _, _ := pDefWindowProcW.Call(hwnd, message, wParam, lParam)

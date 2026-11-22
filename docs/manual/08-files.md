@@ -1,6 +1,6 @@
 # 8. Opening, saving, importing and exporting
 
-[Contents](README.md) · Previous: [Split and section view](07-split-and-section.md) · Next: [Getting ready to print](09-printing.md)
+[Contents](README.md) · Previous: [Split, stretch and section view](07-split-and-section.md) · Next: [Getting ready to print](09-printing.md)
 
 ScottiCAD works with three kinds of file:
 
@@ -62,13 +62,15 @@ middle of the view. Click **Import** at the top right, or press
 | File | What you get |
 |---|---|
 | **STL**, **OBJ** | The 3D model as one shape. You can move, resize and turn it, make it a hole, and group it with other shapes |
+| **3MF** | The same, with every object in the file together as one shape, where the file puts them. A slicer project with several plates comes in with its plates side by side |
 | **SVG** | The drawing's outlines, raised into a solid of the height you give |
 
 The options:
 
 - **Scale** makes the import bigger or smaller. 100% leaves it as it
   is.
-- **Units (STL/OBJ).** These files hold numbers without units. Most are
+- **Units (STL/OBJ).** These files hold numbers without units (a 3MF
+  says its own, so this setting doesn't apply to it). Most are
   in millimetres. If a model comes in 25 times too small, it was made in
   inches: import it again with **Inches** chosen.
 - **SVG height** is how thick the solid made from a drawing is, in
@@ -136,4 +138,4 @@ and the time. Open it like any other design.
 
 ---
 
-[Contents](README.md) · Previous: [Split and section view](07-split-and-section.md) · Next: [Getting ready to print](09-printing.md)
+[Contents](README.md) · Previous: [Split, stretch and section view](07-split-and-section.md) · Next: [Getting ready to print](09-printing.md)

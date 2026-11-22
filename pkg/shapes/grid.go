@@ -52,6 +52,26 @@ func DiamondGridMesh(s geom.Vec3, cols, rows int, size, gap float64) *geom.Mesh 
 			}
 		}
 	}
+	if gap < 1e-9 {
+		// with no gap the diamonds in between share whole sides with their
+		// neighbours: joined into one outline first (left side by side, they
+		// would be taken for holes in each other and some would go missing)
+		var joined area
+		var polys []boxedPoly
+		for _, c := range outs {
+			polys = append(polys, boxed(c))
+			joined.edges = append(joined.edges, ringEdges(c)...)
+		}
+		joined.inside = func(q Pt) bool {
+			for _, p := range polys {
+				if p.has(q) {
+					return true
+				}
+			}
+			return false
+		}
+		outs = outlinesOf(joined)
+	}
 	return ExtrudeContours(outs, -0.5, 0.5).FitTo(s)
 }
 
@@ -264,12 +284,12 @@ func TubeJointBox(v Values) geom.Box {
 func init() {
 	register(&Kind{ID: "tubejoint", Label: "Tube Joint", Color: "#d62f2f", Size: TubeJointBox(Values{Num: map[string]float64{}}).Size(),
 		Params: []Param{
-			lslider("inner", "Inner Radius", 0, 100, 0.5, 12, false),
-			lslider("outer", "Outer Radius", 1, 200, 0.5, 33, false),
+			lslider("inner", "Inner Radius", 0, 100, 0.5, 12),
+			lslider("outer", "Outer Radius", 1, 200, 0.5, 33),
 			slider("tongs", "Blades", 1, 64, 1, 20, true),
 			slider("angle", "Blade Angle", -90, 90, 1, 30, false),
 			slider("thick", "Blade Thickness (%)", 1, 100, 1, 30, false),
-			lslider("height", "Height", 0.1, 200, 0.1, 10, false),
+			lslider("height", "Height", 0.1, 200, 0.1, 10),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			// each blade on its own: thick or steep blades overlap their
@@ -283,10 +303,10 @@ func init() {
 		natural: func(v Values) geom.Vec3 { return TubeJointBox(v).Size() }})
 	register(&Kind{ID: "diamondmesh", Label: "Diamond Mesh", Color: "#e2142a", Size: geom.V(60, 60, 4),
 		Params: []Param{
-			lslider("border", "Border", 0, 50, 0.1, 1, false),
+			lslider("border", "Border", 0, 50, 0.1, 1),
 			slider("rows", "Rows", 1, 60, 1, 11, true),
 			slider("cols", "Columns", 1, 60, 1, 11, true),
-			lslider("gap", "Gap", 0, 20, 0.1, 2, false),
+			lslider("gap", "Gap", 0, 20, 0.1, 2),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			// built at its size: the border and gap are in mm
@@ -295,12 +315,12 @@ func init() {
 		}})
 	register(&Kind{ID: "flutedrod", Label: "Fluted Rod", Color: "#3c4a5c", Size: FlutedRodBox(Values{Num: map[string]float64{}}).Size(),
 		Params: []Param{
-			lslider("d1", "Bottom Diameter", 1, 200, 0.5, 22.5, false),
-			lslider("d2", "Top Diameter", 1, 200, 0.5, 19, false),
-			lslider("height", "Height", 0.1, 300, 0.5, 37, false),
+			lslider("d1", "Bottom Diameter", 1, 200, 0.5, 22.5),
+			lslider("d2", "Top Diameter", 1, 200, 0.5, 19),
+			lslider("height", "Height", 0.1, 300, 0.5, 37),
 			slider("lobes", "Lobes", 3, 64, 1, 12, true),
-			lslider("e1", "Groove at Bottom", 0, 20, 0.1, 1.5, false),
-			lslider("e2", "Groove at Top", 0, 20, 0.1, 1.5, false),
+			lslider("e1", "Groove at Bottom", 0, 20, 0.1, 1.5),
+			lslider("e2", "Groove at Top", 0, 20, 0.1, 1.5),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			n, d1, d2, e1, e2 := flutedValues(v)
@@ -310,11 +330,11 @@ func init() {
 	register(&Kind{ID: "honeycomb", Label: "Honeycomb Grid", Color: "#b5651d", Size: polygonGridSize(Values{Num: map[string]float64{}}),
 		Params: []Param{
 			slider("sides", "Polygon Sides", 3, 12, 1, 6, true),
-			lslider("radius", "Radius", 0.5, 20, 0.1, 1.5, false),
+			lslider("radius", "Radius", 0.5, 20, 0.1, 1.5),
 			slider("rows", "Rows", 1, 50, 1, 6, true),
 			slider("cols", "Columns", 1, 50, 1, 6, true),
-			lslider("gap", "Wall Thickness", 0, 10, 0.05, 0.2, false),
-			lslider("height", "Height", 0.1, 200, 0.1, 10, false),
+			lslider("gap", "Wall Thickness", 0, 10, 0.05, 0.2),
+			lslider("height", "Height", 0.1, 200, 0.1, 10),
 			slider("rotation", "Rotation", 0, 360, 1, 0, false),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
@@ -325,8 +345,8 @@ func init() {
 		Params: []Param{
 			slider("cols", "Columns", 1, 50, 1, 4, true),
 			slider("rows", "Rows", 1, 50, 1, 4, true),
-			lslider("size", "Size", 0.5, 20, 0.1, 3, false),
-			lslider("gap", "Gap", 0, 20, 0.1, 2, false),
+			lslider("size", "Size", 0.5, 20, 0.1, 3),
+			lslider("gap", "Gap", 0, 20, 0.1, 2),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			return DiamondGridMesh(s, int(v.Get("cols", 4)), int(v.Get("rows", 4)), v.Get("size", 3), v.Get("gap", 2))
@@ -335,8 +355,8 @@ func init() {
 		Params: []Param{
 			slider("cols", "Columns", 1, 50, 1, 4, true),
 			slider("rows", "Rows", 1, 50, 1, 4, true),
-			lslider("size", "Size", 0.5, 20, 0.1, 3, false),
-			lslider("gap", "Gap", 0, 20, 0.1, 2, false),
+			lslider("size", "Size", 0.5, 20, 0.1, 3),
+			lslider("gap", "Gap", 0, 20, 0.1, 2),
 		},
 		build: func(s geom.Vec3, v Values) *geom.Mesh {
 			return GridMesh(s, int(v.Get("cols", 4)), int(v.Get("rows", 4)), v.Get("size", 3), v.Get("gap", 2))

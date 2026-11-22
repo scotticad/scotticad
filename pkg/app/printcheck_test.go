@@ -77,6 +77,21 @@ func TestPrintCheckPlacement(t *testing.T) {
 	}
 }
 
+// The newest shapes, as the library drops them, print with nothing to warn
+// about.
+func TestPrintCheckNewShapes(t *testing.T) {
+	for _, kind := range []string{"roundedbox", "crescent", "port", "finishingwasher", "gridfinitybin", "gridfinityplate"} {
+		a := checkApp()
+		id, err := a.ed.AddShape(kind, geom.V(0, 0, 0), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := kinds(a); len(got[id]) != 0 {
+			t.Errorf("%s: %v", kind, got[id])
+		}
+	}
+}
+
 // Messages give lengths in the design's units.
 func TestPrintCheckMessagesFollowTheUnits(t *testing.T) {
 	a := checkApp()
@@ -232,7 +247,7 @@ func TestPrintCheckOverhangs(t *testing.T) {
 	// a 30 mm slab on a 10 mm post: grouped, the slab's underside round
 	// the post overhangs
 	post := add(t, a, geom.V(50, 0, 0), nil)
-	slab := add(t, a, geom.V(50, 0, 10), cube30x2())
+	slab := add(t, a, geom.V(50, 0, 10), cube(geom.V(30, 30, 2)))
 	if o := over(a); !near(o[slab], 900-100) || o[post] != 0 {
 		t.Errorf("a slab on a post: %g mm², want 800", o[slab])
 	}
@@ -244,7 +259,7 @@ func TestPrintCheckOverhangs(t *testing.T) {
 	if o := over(a); !near(o[g], 800) {
 		t.Errorf("grouped: %g mm², want 800", o[g])
 	}
-	if r := a.printCheck(a.ed.Doc.Nodes, false); r.parts[0].status() != "ok" && r.parts[1].status() != "ok" {
+	if r := a.printCheck(a.ed.Doc.Nodes, false); r.parts[0].status() != "ok" || r.parts[1].status() != "ok" {
 		t.Errorf("overhangs aren't a finding: %+v", r.parts)
 	}
 	lines := checkLines(a.printCheck(a.ed.Doc.Nodes, false), "mm")
@@ -262,8 +277,6 @@ func TestPrintCheckOverhangs(t *testing.T) {
 		t.Errorf("21 mm² of overhang: %+v", ls)
 	}
 }
-
-func cube30x2() *geom.Mesh { return cube(geom.V(30, 30, 2)) }
 
 // A design of more parts than checkCache keeps every part's check: were
 // the cache emptied part way through, the background check of a big design

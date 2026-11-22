@@ -90,6 +90,12 @@ func (d *Document) indexOf(n *Node) int {
 // never do in a bundle. b is n's bounds in frame f. The half isn't added
 // to the document.
 func (d *Document) half(n *Node, b geom.Box, f geom.Mat4, axis int, at float64, side string) *Node {
+	if n.IsStretch() {
+		n = d.bakeStretch(n) // what it shows is what is cut
+	}
+	if n.IsPattern() {
+		n = n.expanded() // each copy is cut where the plane meets it
+	}
 	if n.IsBundle() {
 		return d.halfBundle(n, f, axis, at, side)
 	}

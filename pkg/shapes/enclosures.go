@@ -284,11 +284,11 @@ func extrudedParts(v Values) []Placed {
 
 func init() {
 	box := []Param{
-		lslider("length", "Length", 10, 300, 1, 60, false),
-		lslider("width", "Width", 10, 300, 1, 40, false),
-		lslider("height", "Height", 5, 200, 1, 25, false),
-		lslider("wall", "Wall", 0.4, 10, 0.1, 2, false),
-		lslider("radius", "Corner Radius", 0, 30, 0.5, 3, false),
+		lslider("length", "Length", 10, 300, 1, 60),
+		lslider("width", "Width", 10, 300, 1, 40),
+		lslider("height", "Height", 5, 200, 1, 25),
+		lslider("wall", "Wall", 0.4, 10, 0.1, 2),
+		lslider("radius", "Corner Radius", 0, 30, 0.5, 3),
 		slider("lid", "Lid", 0, 1, 1, 1, true),
 	}
 	registerHiddenPart("projectbox-body", "Project Box", "#f7c51e", box, projectBoxBody)
@@ -296,14 +296,14 @@ func init() {
 	registerAssembly(&HardwareKinds, "projectbox", "Project Box", "#f7c51e", box, projectBoxParts)
 
 	ext := []Param{
-		lslider("length", "Length", 20, 300, 1, 80, false),
-		lslider("width", "Width", 15, 200, 1, 54, false),
-		lslider("height", "Height", 10, 150, 1, 30, false),
-		lslider("wall", "Wall", 1.2, 6, 0.1, 2, false),
-		lslider("radius", "Corner Radius", 0, 15, 0.5, 2, false),
+		lslider("length", "Length", 20, 300, 1, 80),
+		lslider("width", "Width", 15, 200, 1, 54),
+		lslider("height", "Height", 10, 150, 1, 30),
+		lslider("wall", "Wall", 1.2, 6, 0.1, 2),
+		lslider("radius", "Corner Radius", 0, 15, 0.5, 2),
 		slider("grooves", "Side Grooves", 0, 20, 1, 6, true),
 		slider("slots", "Card Slots", 0, 10, 1, 3, true),
-		lslider("panel", "Panel Thickness", 0.8, 6, 0.1, 2.5, false),
+		lslider("panel", "Panel Thickness", 0.8, 6, 0.1, 2.5),
 		slider("panels", "End Panels", 0, 1, 1, 1, true),
 	}
 	registerHiddenPart("extrudedbox-body", "Extruded Box", "#c3c8cd", ext, extrudedBody)

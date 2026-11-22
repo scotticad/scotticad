@@ -354,9 +354,15 @@ func TestPropertyWideEditSequences(t *testing.T) {
 	if testing.Short() {
 		seeds, steps = 5, 80
 	}
+	wideSequences(t, seeds, steps, 7919, wideStep)
+}
+
+// wideSequences runs random sequences of step (see the top of this file
+// for what is checked), one for each seed, seeded with seed*mul.
+func wideSequences(t *testing.T, seeds int64, steps int, mul int64, wideStep func(*Editor, *rand.Rand) (string, bool)) {
 	empty := ptDocBytes(t, New())
 	for seed := int64(1); seed <= seeds; seed++ {
-		r := rand.New(rand.NewSource(seed * 7919))
+		r := rand.New(rand.NewSource(seed * mul))
 		e := New()
 		var clip string
 		e.SetClipboard = func(s string) { clip = s }

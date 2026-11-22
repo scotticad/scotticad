@@ -184,8 +184,8 @@ func (a *App) drawSection() {
 		panelItem{kind: panelButton, id: "section-close", label: "Close", tip: "Esc", click: func() { a.setSection(false) }},
 	)
 	y := a.vp.Y + 12
-	if a.mode == modeSplit || a.bannerText() != "" {
-		y += 48 // below the Split tool's panel or a hint banner
+	if a.mode == modeSplit || a.mode == modeStretch || a.bannerText() != "" {
+		y += 48 // below the Split or Stretch tool's panel, or a hint banner
 	}
 	a.drawToolPanel(y, items)
 }

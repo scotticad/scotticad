@@ -524,7 +524,7 @@ func (a *App) setTheme(t Theme) {
 	applyTheme(t)
 	if p := prefsPath("theme.json"); p != "" && !a.headless {
 		if err := writeThemePref(p, t.Name); err != nil {
-			a.showToast("couldn't save the theme: " + err.Error())
+			a.showToast("Couldn't save the theme: " + err.Error())
 		}
 	}
 	a.w.Redraw()

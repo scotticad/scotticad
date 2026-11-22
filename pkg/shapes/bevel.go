@@ -24,14 +24,14 @@ import (
 // cone's apex height above the back, the cone distance and angle.
 type bevelGeom struct {
 	m             float64
-	z, zm         int
+	z             int
 	R, apex, A, d float64
 }
 
 func bevelOf(m float64, z, zm int) bevelGeom {
 	d := math.Atan2(float64(z), float64(zm))
 	R := m * float64(z) / 2
-	return bevelGeom{m: m, z: z, zm: zm, R: R, apex: m * float64(zm) / 2, A: math.Hypot(R, m*float64(zm)/2), d: d}
+	return bevelGeom{m: m, z: z, R: R, apex: m * float64(zm) / 2, A: math.Hypot(R, m*float64(zm)/2), d: d}
 }
 
 // backOutline is the gear's toothed outline on its flat back,

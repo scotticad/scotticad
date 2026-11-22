@@ -18,8 +18,10 @@ import (
 // plain go test. FuzzBuild's largest shapes (a hex bolt at its longest)
 // take seconds each: on a machine with many cores, run it with -parallel 4
 // or so, or the workers building them at once starve each other and the
-// fuzzer reports a hang. To look past a known finding while fuzzing, set
-// SCOTTICAD_FUZZ_RELAX to a comma-separated list of checks to skip:
+// fuzzer reports a hang. The same goes for FuzzSketch: eight thick paths
+// crossing each other dozens of times take seconds to join.
+//
+// To look past a known finding while fuzzing, set SCOTTICAD_FUZZ_RELAX to a comma-separated list of checks to skip:
 // "nan" (non-finite vertices), "edges" (open edges), "time" (slow inputs).
 
 func fzRelaxed(check string) bool {
@@ -33,8 +35,8 @@ func fzRelaxed(check string) bool {
 
 // fzSlack stretches every fzWithin limit. The limits are written as what
 // an input should take on an idle machine; the fuzzer runs a worker per
-// core, and on a busy machine an input that takes 3 s alone took over 15,
-// failing as a hang when it wasn't one. A real hang still trips it.
+// core, and on a busy machine an input that takes 3 s alone can take over
+// 15 and fail as a hang when it isn't one. A real hang still trips it.
 const fzSlack = 4
 
 // fzWithin runs f and fails if it doesn't finish within d (times fzSlack).
@@ -289,6 +291,121 @@ func FuzzTube(f *testing.F) {
 			}
 		}
 	})
+}
+
+// fzSketch reads a drawing from the fuzzer's bytes: a path is a header byte
+// (closed, stroke, join, cap, align) and a count, then five bytes a point:
+// its position (on a fine grid, so points meet, repeat and line up), its
+// kind and a handle. Up to 5 paths of 24 points, 48 points in all: more
+// outlines crossing each other dozens of times take seconds to join (8
+// paths of 69 points, six of them thick lines, take about 3 s), and the
+// fuzzer takes that for a hang.
+func fzSketch(b []byte) *Sketch {
+	sk := &Sketch{}
+	total := 0
+	for len(b) >= 2 && len(sk.Paths) < 5 && total < 48 {
+		h, n := b[0], 1+int(b[1])%24
+		b = b[2:]
+		p := SketchPath{Closed: h&1 != 0, Join: int(h>>1) % 3, Cap: int(h>>3) % 3, Align: int(h>>5) % 3}
+		if h&0x80 != 0 {
+			p.Stroke = 0.05 + float64(h&0x1e)/4
+		}
+		for k := 0; k < n && len(b) >= 5 && total < 48; k++ {
+			total++
+			q := SketchPoint{P: [2]float64{(float64(b[0]) - 128) / 4, (float64(b[1]) - 100) / 4}, Kind: int(b[2]) % 3}
+			if b[2] >= 96 {
+				// a handle, mirrored for a smooth point as the editor makes it
+				q.Out = [2]float64{(float64(b[3]) - 128) / 8, (float64(b[4]) - 128) / 8}
+				q.In = [2]float64{-q.Out[0], -q.Out[1]}
+				if b[2] >= 192 {
+					q.In = [2]float64{q.Out[1], -q.Out[0]}
+				}
+			}
+			p.Points = append(p.Points, q)
+			b = b[5:]
+		}
+		if len(p.Points) > 0 {
+			sk.Paths = append(sk.Paths, p)
+		}
+	}
+	return sk
+}
+
+// FuzzSketch builds drawings made of the fuzzer's bytes as each sketch kind,
+// with fuzzed settings held to their sliders as Build holds them. A drawing
+// with something to build gives a finite, closed solid in time; one without
+// gives the stand-in.
+func FuzzSketch(f *testing.F) {
+	sq := []byte{1, 4, 128, 100, 0, 0, 0, 168, 100, 0, 0, 0, 168, 140, 0, 0, 0, 128, 140, 0, 0, 0}
+	f.Add(sq, uint8(0), 12.0, 100.0, 100.0, 0.0, 0.0)
+	f.Add(sq, uint8(1), 3.0, 360.0, 0.0, 30.0, 0.0)
+	f.Add(sq, uint8(2), 5.0, 3.0, 6.0, 48.0, 0.0)
+	// a curve, a line with round ends crossing it, a hole inside the square
+	curvy := append(append([]byte{1, 3, 100, 100, 1, 0, 0, 120, 140, 200, 160, 140, 90, 120, 2, 0, 0},
+		0x81|0x0c|0x02, 3, 90, 90, 0, 0, 0, 130, 150, 100, 150, 100, 150, 90, 0, 0, 0), sq...)
+	curvy = append(curvy, 1, 3, 140, 110, 0, 0, 0, 150, 110, 0, 0, 0, 145, 120, 0, 0, 0)
+	f.Add(curvy, uint8(0), 1.0, 0.0, 200.0, -360.0, 360.0)
+	f.Add(curvy, uint8(1), 1.0, 1.0, 128.0, 359.0, 1.0)
+	f.Add(curvy, uint8(2), 64.0, 50.0, 0.1, 128.0, 360.0)
+	// points on top of each other, and two curves between two points
+	f.Add([]byte{1, 3, 120, 120, 0, 0, 0, 120, 120, 0, 0, 0, 120, 120, 0, 0, 0}, uint8(0), 12.0, 100.0, 100.0, 0.0, 0.0)
+	f.Add([]byte{1, 2, 100, 100, 150, 128, 200, 120, 100, 150, 128, 50}, uint8(1), 1.0, 48.0, 0.0, 360.0, 1.0)
+	f.Fuzz(func(t *testing.T, data []byte, which uint8, a, b, c, d, e float64) {
+		fzCheckSketch(t, fzSketch(data), which, a, b, c, d, e)
+	})
+}
+
+// FuzzSketchHoles is FuzzSketch with some of the paths holes: bit i of
+// holes makes path i one. (A target of its own, so FuzzSketch's saved
+// inputs keep meaning what they did.)
+func FuzzSketchHoles(f *testing.F) {
+	sq := []byte{1, 4, 128, 100, 0, 0, 0, 168, 100, 0, 0, 0, 168, 140, 0, 0, 0, 128, 140, 0, 0, 0}
+	inner := []byte{1, 4, 138, 110, 0, 0, 0, 158, 110, 0, 0, 0, 158, 130, 0, 0, 0, 138, 130, 0, 0, 0}
+	slot := []byte{0x80 | 0x08, 2, 120, 120, 0, 0, 0, 176, 120, 0, 0, 0}
+	f.Add(append(append([]byte{}, sq...), inner...), uint8(2), uint8(0), 12.0, 100.0, 100.0, 0.0, 0.0)
+	f.Add(append(append([]byte{}, sq...), inner...), uint8(1), uint8(1), 3.0, 360.0, 0.0, 30.0, 0.0)
+	f.Add(append(append([]byte{}, sq...), slot...), uint8(2), uint8(2), 5.0, 3.0, 6.0, 48.0, 0.0)
+	f.Add(append(append(append([]byte{}, sq...), inner...), slot...), uint8(6), uint8(0), 1.0, 0.0, 200.0, -360.0, 360.0)
+	f.Fuzz(func(t *testing.T, data []byte, holes, which uint8, a, b, c, d, e float64) {
+		sk := fzSketch(data)
+		for i := range sk.Paths {
+			sk.Paths[i].Hole = holes>>i&1 != 0
+		}
+		fzCheckSketch(t, sk, which, a, b, c, d, e)
+	})
+}
+
+// fzCheckSketch builds sk as the kind which picks, with settings a to e:
+// a finite, closed solid in time, or the stand-in when nothing builds.
+func fzCheckSketch(t *testing.T, sk *Sketch, which uint8, a, b, c, d, e float64) {
+	kind := []string{"sketch", "revolve", "coil"}[which%3]
+	k, _ := Lookup(kind)
+	if CheckSketch(sk) != nil {
+		t.Fatalf("fzSketch made a sketch CheckSketch refuses: %v", CheckSketch(sk))
+	}
+	v := Values{Num: map[string]float64{}, Sketch: sk}
+	for i, p := range k.Params {
+		v.Num[p.Key] = []float64{a, b, c, d, e}[i%5]
+	}
+	if kind == "sketch" {
+		v.Num["twistmode"] = float64(which / 3 % 2)
+	}
+	var m *geom.Mesh
+	fzWithin(t, 15*time.Second, "Build "+kind, func() { m = Build(kind, geom.V(20, 20, 20), v) })
+	if m == nil || len(m.Tris) == 0 {
+		t.Fatalf("Build %s: no mesh", kind)
+	}
+	fzMeshFinite(t, "Build "+kind, m)
+	if !Buildable(kind, sk) || fzRelaxed("edges") {
+		return
+	}
+	if open, nm := m.EdgeCheck(1e-7); open != 0 || nm != 0 {
+		t.Fatalf("%s: %d open, %d non-manifold edges, settings %v, drawing %+v", kind, open, nm, k.clamp(v).Num, sk)
+	}
+	if len(m.Tris) > 2*sketchTriBudget {
+		t.Fatalf("%s: %d triangles, budget %d", kind, len(m.Tris), sketchTriBudget)
+	}
+	fzWithin(t, 15*time.Second, "SketchBounds "+kind, func() { SketchBounds(kind, v) })
 }
 
 func FuzzBuild(f *testing.F) {

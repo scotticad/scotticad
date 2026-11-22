@@ -55,13 +55,18 @@ func prefsPath(name string) string {
 	return filepath.Join(dir, "ScottiCAD", name)
 }
 
-// writePrefs saves v as JSON at p, making the folder if need be.
+// writePrefs saves v as JSON at p, making the folder if need be; written
+// beside the file and renamed over it, so a failure never leaves the saved
+// settings empty.
 func writePrefs(p string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	b, _ := json.MarshalIndent(v, "", " ")
-	return os.WriteFile(p, b, 0o644)
+	return editor.WriteFileAtomic(p, b)
 }
 
 func (a *App) loadFilament() {
@@ -83,7 +88,7 @@ func (a *App) saveFilament() {
 	if p == "" {
 		return
 	}
-	if err := writeFilamentPrefs(p, a.fil.settings); err != nil {
+	if err := writePrefs(p, a.fil.settings); err != nil {
 		a.showToast("Couldn't save the filament settings: " + err.Error())
 	}
 }
@@ -101,20 +106,6 @@ func readFilamentPrefs(p string) filament.Settings {
 		return filament.Defaults()
 	}
 	return s.Normalized()
-}
-
-// writeFilamentPrefs saves filament settings, making the folder if need
-// be; written beside the file and renamed over it, so a failure never
-// leaves the saved settings empty.
-func writeFilamentPrefs(p string, s filament.Settings) error {
-	b, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	return editor.WriteFileAtomic(p, b)
 }
 
 // filamentNodes are what is estimated: the selection, or every visible

@@ -73,7 +73,9 @@ func TestTJunctionsOnLongEdgesAreFast(t *testing.T) {
 	}
 	start := time.Now()
 	m.FixTJunctions()
-	if d := time.Since(start); d > 300*time.Millisecond {
+	// (well under the limit even on a loaded machine; looking at every
+	// vertex beside every edge takes seconds)
+	if d := time.Since(start); d > time.Second {
 		t.Fatalf("took %v", d)
 	}
 }

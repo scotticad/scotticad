@@ -54,7 +54,7 @@ const (
 
 // checkFinding is one thing the check found about a part.
 type checkFinding struct {
-	kind     string // hole, hairline, non-manifold, inside-out, empty-shell, below-plate, floating, mid-air, too-big, off-plate
+	kind     string // hole, hairline, non-manifold, inside-out, below-plate, floating, mid-air, too-big, off-plate
 	severity string
 	message  string
 	tip      string // what to do about it

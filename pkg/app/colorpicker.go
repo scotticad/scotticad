@@ -100,7 +100,7 @@ func (a *App) setPickerHSV(h, s, v float64, live bool) {
 	hex := rgbHex(hsvRGB(a.pickH, a.pickS, a.pickV))
 	a.pickHex = hex
 	if a.pickTarget != nil {
-		a.pickTarget(hex, live)
+		a.pickTarget(hex)
 		return
 	}
 	if live {
@@ -117,7 +117,7 @@ func (a *App) setPickerHex(hex string) {
 	}
 	a.pickHex = "" // re-read HSV from the new colour
 	if a.pickTarget != nil {
-		a.pickTarget(strings.ToLower(hex), false)
+		a.pickTarget(strings.ToLower(hex))
 		return
 	}
 	if err := a.ed.SetColor(strings.ToLower(hex)); err != nil {
@@ -296,7 +296,7 @@ func (a *App) drawCustomColor(r render.Rect, cur string) {
 		}})
 	}
 
-	// Hex # — Copy — field
+	// the Hex # label, Copy and the field
 	y := r.Y + 48 + 3*54 + 6
 	b.Text("Hex #", rx, y, fontUI, false, colText)
 	hex := strings.TrimPrefix(strings.ToLower(cur), "#")

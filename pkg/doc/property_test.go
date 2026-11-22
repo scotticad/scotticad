@@ -36,7 +36,7 @@ func ptDesc(n *Node) string {
 	return string(b)
 }
 
-// Marshal → Unmarshal → Marshal gives the same bytes, also through the
+// Marshal -> Unmarshal -> Marshal gives the same bytes, also through the
 // history's shared-blob form.
 func TestPropertyMarshalRoundTrip(t *testing.T) {
 	r := rand.New(rand.NewSource(31))

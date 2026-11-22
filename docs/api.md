@@ -151,7 +151,7 @@ reference is made from: every method with its parameters.
 - **Transforms**: [`move`](#move), [`set_position`](#set_position), [`set_size`](#set_size), [`set_bounds`](#set_bounds), [`rotate`](#rotate), [`mirror`](#mirror), [`align`](#align), [`drop`](#drop), [`nudge`](#nudge)
 - **Appearance**: [`set_hole`](#set_hole), [`set_color`](#set_color), [`set_transparent`](#set_transparent), [`set_multicolor`](#set_multicolor), [`set_locked`](#set_locked), [`set_name`](#set_name), [`set_param`](#set_param), [`set_text`](#set_text)
 - **Visibility**: [`hide`](#hide), [`toggle_hidden`](#toggle_hidden), [`show_all`](#show_all)
-- **Grouping**: [`group`](#group), [`ungroup`](#ungroup), [`set_group_mode`](#set_group_mode)
+- **Grouping**: [`group`](#group), [`ungroup`](#ungroup), [`set_group_mode`](#set_group_mode), [`pattern`](#pattern), [`stretch`](#stretch)
 - **Split, lay flat and section view**: [`split`](#split), [`lay_flat`](#lay_flat), [`set_section`](#set_section)
 - **Filament**: [`filament_estimate`](#filament_estimate), [`print_check`](#print_check), [`set_filament_settings`](#set_filament_settings)
 - **Clipboard and undo**: [`duplicate`](#duplicate), [`copy`](#copy), [`cut`](#cut), [`paste`](#paste), [`delete`](#delete), [`undo`](#undo), [`redo`](#redo)
@@ -160,6 +160,7 @@ reference is made from: every method with its parameters.
 - **Input simulation (window coordinates in logical px)**: [`mouse_move`](#mouse_move), [`mouse_down`](#mouse_down), [`mouse_up`](#mouse_up), [`click`](#click), [`drag`](#drag), [`wheel`](#wheel), [`key`](#key), [`type_text`](#type_text)
 - **Scripting**: [`run_script`](#run_script), [`stop_script`](#stop_script), [`get_console`](#get_console), [`script_api`](#script_api)
 - **Automated runs**: [`answer_dialogs`](#answer_dialogs), [`close_window`](#close_window), [`lose_capture`](#lose_capture), [`drop_files`](#drop_files), [`stats`](#stats), [`quit`](#quit)
+- **Sketches (and the sketch workspace)**: [`add_sketch`](#add_sketch), [`set_sketch`](#set_sketch), [`edit_sketch`](#edit_sketch), [`sketch_state`](#sketch_state), [`sketch_image`](#sketch_image), [`sketch_image_remove`](#sketch_image_remove), [`sketch_tool`](#sketch_tool), [`sketch_view`](#sketch_view), [`sketch_done`](#sketch_done), [`sketch_cancel`](#sketch_cancel)
 
 ### Design files
 
@@ -369,7 +370,7 @@ Python: `cad.delete_note(id, index)` returns nothing
 
 #### `import`
 
-Import an STL, OBJ or SVG file onto the current plane; selects it.
+Import an STL, OBJ, 3MF or SVG file onto the current plane; selects it.
 
 Python: `cad.import_file(path, x=0, y=0, scale=1.0, units="mm", height=10.0)` returns the reply's `id`
 
@@ -615,7 +616,7 @@ Python: `cad.set_name(name, ids=None)` returns nothing
 
 #### `set_param`
 
-Set a shape parameter (see shape_kinds). A choice (a dropdown, such as a bearing seat's bearing) is set by its option's index in shape_kinds' options.
+Set a shape parameter (see shape_kinds). A choice (a dropdown, such as a bearing seat's bearing) is set by its option's index in shape_kinds' options. A pattern's settings are set this way too (see pattern): type (0 grid, 1 circle), columns, rows, dx, dy, stagger, count, radius, angle, turn. So are a stretch's (see stretch): axis (0 x, 1 y, 2 z, the group's own), at (the plane, mm from the shapes' low end), amount, length.
 
 Python: `cad.set_param(id, key, value)` returns nothing
 
@@ -675,7 +676,7 @@ Python: `cad.group(mode="union", ids=None)` returns the reply's `id`
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
-| `mode` | string | optional | "union" (default), "bundle" or "intersect" |
+| `mode` | string | optional | "union" (default), "bundle", "intersect" or "hull" (the shapes wrapped in one skin with no dents) |
 | `ids` | int[] | optional | top-level node ids; defaults to the selection |
 
 #### `ungroup`
@@ -690,13 +691,47 @@ Python: `cad.ungroup(ids=None)` returns the reply's `ids`
 
 #### `set_group_mode`
 
-Switch selected groups between union, bundle and intersect.
+Switch selected groups between union, bundle, intersect and hull.
 
 Python: `cad.set_group_mode(mode, ids=None)` returns nothing
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
-| `mode` | string | required | union, bundle or intersect |
+| `mode` | string | required | union, bundle, intersect or hull |
+| `ids` | int[] | optional | top-level node ids; defaults to the selection |
+
+#### `pattern`
+
+Repeat the selection (one shape or more) in a grid or round a circle; returns the pattern's id. A pattern is a group that shows its shapes several times: change a shape in it or a setting (set_param on the pattern's id) and every copy follows. It keeps its copies apart, as a bundle does, so a pattern of a hole is a set of holes, which cut when the pattern is grouped with a solid. The shapes stay where they are, as the first copy; ungroup turns the copies into separate shapes. Settings left out start as a row of three, spaced by the shapes' size.
+
+Python: `cad.pattern(type=None, columns=None, rows=None, dx=None, dy=None, stagger=None, count=None, radius=None, angle=None, turn=None, ids=None)` returns the reply's `id`
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `type` | string | optional | "grid" (default) or "circle" |
+| `columns` | int | optional | grid: copies along x, 1 to 50 |
+| `rows` | int | optional | grid: copies along y, 1 to 50 |
+| `dx` | float | optional | grid: mm from one column to the next |
+| `dy` | float | optional | grid: mm from one row to the next |
+| `stagger` | bool | optional | grid: every second row half a column along |
+| `count` | int | optional | circle: copies, 1 to 200 |
+| `radius` | float | optional | circle: mm; the center is this far to the -x side of the shapes |
+| `angle` | float | optional | circle: degrees the copies are spread over; 360 (default) shares the full turn out, less puts a copy at each end |
+| `turn` | bool | optional | circle: turn each copy with the circle (default true) |
+| `ids` | int[] | optional | top-level node ids; defaults to the selection |
+
+#### `stretch`
+
+Lengthen or shorten the selection at a plane square to an axis of the current plane; returns the stretch's id. A positive amount inserts that much at the plane: what is beyond it moves along the axis and the cut outline is carried straight across the gap, so walls running along the axis get longer. A negative amount removes a slab that thick centered on the plane and closes the gap. The low (-) end never moves. Give amount, or length for the length wanted along the axis (the difference is the amount). A stretch is a group: its shapes stay as they were inside it and its settings can be changed later (set_param on its id: axis, at, amount, length); ungroup bakes it in, turning only the shapes the plane crosses into meshes.
+
+Python: `cad.stretch(axis, amount=None, length=None, at=None, ids=None)` returns the reply's `id`
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `axis` | axis | required | x, y or z (the current plane's) |
+| `at` | float | optional | where the plane crosses the axis, mm; default: the selection's center |
+| `amount` | float | optional | mm to add (positive) or take out (negative) |
+| `length` | float | optional | the length wanted along the axis, mm (instead of amount) |
 | `ids` | int[] | optional | top-level node ids; defaults to the selection |
 
 ### Split, lay flat and section view
@@ -787,7 +822,7 @@ Python: `cad.set_filament_settings(material=None, density=None, diameter=None, l
 
 #### `duplicate`
 
-Ctrl+D; returns new ids.
+Duplicate the selected shapes in place, as Ctrl+D (select them first); returns the new ids.
 
 Python: `cad.duplicate()` returns the reply's `ids`
 
@@ -916,13 +951,13 @@ Python: `cad.attach_construction_plane(id)` returns nothing
 
 #### `set_tool`
 
-Activate a tool mode.
+Activate a tool mode (cruise switches on and off).
 
 Python: `cad.set_tool(tool)` returns nothing
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
-| `tool` | string | required | none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, layflat, orbit_center, cruise |
+| `tool` | string | required | none, align, mirror, measure, visibility, ruler, notes, construction_plane, split, stretch, layflat, orbit_center, cruise |
 
 ### Camera and output
 
@@ -962,7 +997,7 @@ Python: `cad.fit_view()` returns nothing
 
 Render the window to a PNG: written to path, or without one returned in the reply as base64 (png).
 
-Python: `cad.screenshot(path)`
+Python: `cad.screenshot(path=None)`
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
@@ -1052,9 +1087,9 @@ Python: `cad.mouse_up(x, y, button="left", mods=[])` returns nothing
 
 #### `click`
 
-Move, press and release.
+Move, press and release (double: twice, the second press as a double-click's).
 
-Python: `cad.click(x, y, button="left", mods=[])` returns nothing
+Python: `cad.click(x, y, button="left", mods=[], double=False)` returns nothing
 
 | Parameter | Type | | Meaning |
 |---|---|---|---|
@@ -1062,6 +1097,7 @@ Python: `cad.click(x, y, button="left", mods=[])` returns nothing
 | `y` | float | required |  |
 | `button` | string | optional |  |
 | `mods` | string[] | optional |  |
+| `double` | bool | optional |  |
 
 #### `drag`
 
@@ -1188,3 +1224,106 @@ Python: `cad.stats(...)` (not in scripts: for soak tests: the program's memory a
 Close ScottiCAD without saving.
 
 Python: `cad.quit(...)` (not in scripts: a script can't close the program it runs in)
+
+### Sketches (and the sketch workspace)
+
+#### `add_sketch`
+
+Make a sketch shape from a drawing: paths of points joined by straight lines and curves. A closed path is an area unless it has a stroke width (areas join, one inside another too); an open path is a line (2 mm wide unless stroke says). A path with hole true cuts what it covers (its area or its line) out of the rest of the drawing instead. A closed path's line lies on it (align center), inside it or outside it. A point is [x, y] (a sharp corner) or {p: [x, y], in: [dx, dy], out: [dx, dy], kind: corner \| smooth \| auto}, its curve handles relative to it (auto: the curve flows through the points, each handle a quarter of the way between its neighbors). kind sketch extrudes the drawing 10 mm up (resize to change; set_param quality, topscale, basescale, twist, twistmode (0 steps, 1 smooth) and twiststeps taper and twist it); revolve spins what is left of x = 0 round the vertical line there; coil spins it too while rising (set_param turns, pitch: a spring, thread or ramp). The drawing's origin goes at (x, y, z). Selects it.
+
+Python: `cad.add_sketch(paths, kind="sketch", x=0, y=0, z=None, hole=False)` returns the reply's `id`
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `paths` | path[] | required | [{points: [...], closed, stroke (mm), align: center \| inside \| outside, join: sharp \| round \| bevel, cap: flat \| round \| square, hole}, ...] |
+| `kind` | string | optional | sketch (default), revolve or coil |
+| `x` | float | optional | mm |
+| `y` | float | optional | mm |
+| `z` | float | optional | mm; default: on the current plane |
+| `hole` | bool | optional |  |
+
+#### `set_sketch`
+
+Replace a sketch shape's drawing (paths as add_sketch). The drawing is in the shape's own frame: what is unchanged stays where it is.
+
+Python: `cad.set_sketch(id, paths)` returns nothing
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `id` | int | required | node id (any depth) |
+| `paths` | path[] | required | as add_sketch |
+
+#### `edit_sketch`
+
+Open the sketch workspace on sketch shape id, or with no id on a new drawing of kind whose origin goes at (x, y, z) when it is done.
+
+Python: `cad.edit_sketch(id=None, kind="sketch", x=0, y=0, z=None)` returns nothing
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `id` | int | optional | node id |
+| `kind` | string | optional | sketch, revolve or coil, for a new one |
+| `x` | float | optional | mm |
+| `y` | float | optional | mm |
+| `z` | float | optional | mm |
+
+#### `sketch_state`
+
+The sketch workspace's state: open, the drawing's paths, the tool, the path being drawn, the selected points ([path, point], from 0), and the view (board rectangle in window px, the mm at its center, px per mm).
+
+Python: `cad.sketch_state()`
+
+#### `sketch_image`
+
+Load a picture (PNG or JPEG) under the open sketch's drawing, to trace, or place the one there: its center (mm), width across (mm; its height follows), angle (degrees anticlockwise) and opacity (0 to 1). A new picture goes in the middle of the view unless placed. It is saved with the sketch and never part of the shape.
+
+Python: `cad.sketch_image(path=None, x=None, y=None, width=None, angle=None, opacity=None)` returns nothing
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `path` | string | optional | picture file; omit to place the one already there |
+| `x` | float | optional | mm |
+| `y` | float | optional | mm |
+| `width` | float | optional | mm |
+| `angle` | float | optional | degrees |
+| `opacity` | float | optional | 0 to 1 |
+
+#### `sketch_image_remove`
+
+Take the picture away from under the open sketch's drawing.
+
+Python: `cad.sketch_image_remove()` returns nothing
+
+#### `sketch_tool`
+
+Pick the sketch workspace's tool.
+
+Python: `cad.sketch_tool(tool)` returns nothing
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `tool` | string | required | select, line, bezier, smooth, refine, shape |
+
+#### `sketch_view`
+
+Set the sketch workspace's view: the mm at the board's center and px per mm. A revolve's or coil's center line stays two thirds across the board, so there x is ignored.
+
+Python: `cad.sketch_view(x, y, zoom)` returns nothing
+
+| Parameter | Type | | Meaning |
+|---|---|---|---|
+| `x` | float | required | mm |
+| `y` | float | required | mm |
+| `zoom` | float | required | px per mm |
+
+#### `sketch_done`
+
+Build the shape from the drawing and close the workspace (an error, and the workspace stays open, if the drawing builds nothing).
+
+Python: `cad.sketch_done()` returns the reply's `id`
+
+#### `sketch_cancel`
+
+Close the sketch workspace, leaving the design as it was.
+
+Python: `cad.sketch_cancel()` returns nothing

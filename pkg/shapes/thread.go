@@ -7,9 +7,9 @@ import (
 )
 
 // The thread generator: an external ISO metric thread (a threaded rod),
-// written from the ISO basic profile (ISO 68-1) — 60° flanks, thread depth
+// written from the ISO basic profile (ISO 68-1: 60° flanks, thread depth
 // 5/8 of the fundamental triangle height H = √3/2 × pitch, a crest flat of
-// pitch/8 and a root flat of pitch/4 — swept as a right-handed helix.
+// pitch/8 and a root flat of pitch/4) swept as a right-handed helix.
 
 // ThreadMesh builds a threaded rod filling size: major diameter size.X
 // (size.Y stretches it into an ellipse if different), length size.Z,
@@ -112,7 +112,7 @@ func init() {
 	register(&Kind{ID: "thread", Label: "ISO Thread", Color: "#9aa3ab",
 		Size: geom.V(12, 12, ThreadLength(1.75, 10)), // M12 × 1.75, 10 turns
 		Params: []Param{
-			mslider("pitch", "Pitch", 0.25, 6, 0.05, 1.75, false),
+			mslider("pitch", "Pitch", 0.25, 6, 0.05, 1.75),
 			slider("sides", "Sides", 8, 96, 1, 48, true),
 			slider("depth", "Thread Depth", 0.1, 1.5, 0.05, 1, false),
 			slider("taper", "Tip Taper", 0, 1, 0.05, 0, false),

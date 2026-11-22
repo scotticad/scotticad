@@ -22,7 +22,7 @@ type ImportOptions struct {
 
 func DefaultImportOptions() ImportOptions { return ImportOptions{Scale: 1, Height: 10, Units: "mm"} }
 
-// LoadMesh reads an STL, OBJ or SVG file into a mesh in millimetres.
+// LoadMesh reads an STL, OBJ, 3MF or SVG file into a mesh in millimetres.
 func LoadMesh(path string, o ImportOptions) (m *geom.Mesh, err error) {
 	// a file is outside data: a reader's bug it triggers is an error for
 	// that file, not the end of the program (and the design open in it)
@@ -47,10 +47,14 @@ func LoadMesh(path string, o ImportOptions) (m *geom.Mesh, err error) {
 		m, err = geom.ReadSTL(data)
 	case ".obj":
 		m, err = geom.ReadOBJ(data)
+	case ".3mf":
+		// a 3MF says its own unit: the Units setting is for the files that don't
+		m, err = geom.Read3MF(data)
+		o.Units = "mm"
 	case ".svg":
 		return shapes.SVGMesh(bytes.NewReader(data), o.Height, o.Scale)
 	default:
-		return nil, fmt.Errorf("unsupported file type %q (use .stl, .obj or .svg)", filepath.Ext(path))
+		return nil, fmt.Errorf("unsupported file type %q (use .stl, .obj, .3mf or .svg)", filepath.Ext(path))
 	}
 	if err != nil {
 		return nil, err

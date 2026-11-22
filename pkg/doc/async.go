@@ -12,7 +12,7 @@ import (
 
 // Background evaluation. Booleans of a big group can take seconds; in async
 // mode (the editor window turns it on) a group whose result isn't ready is
-// shown as a preview — its solid parts merged, without the booleans — while
+// shown as a preview (its solid parts merged, without the booleans) while
 // the real result is computed on another goroutine from a snapshot of the
 // group. When it finishes, OnReady is called (from that goroutine) so the
 // window can redraw. Exports, the automation API and tests evaluate
@@ -115,21 +115,32 @@ func (n *Node) previewMesh() *geom.Mesh {
 	var ms []*geom.Mesh
 	var rec func(x *Node, xf geom.Mat4)
 	rec = func(x *Node, xf geom.Mat4) {
-		for _, c := range x.Children {
-			if c.Hole {
-				continue
+		x.eachCopy(xf, func(xf geom.Mat4) {
+			for _, c := range x.Children {
+				if c.Hole {
+					continue
+				}
+				w := xf.Mul(c.M)
+				if c.IsStretch() {
+					ps, _ := c.stretchPieces(false)
+					for _, p := range ps {
+						if !p.hole {
+							ms = append(ms, p.mesh.Transform(w.Mul(p.m)))
+						}
+					}
+					continue
+				}
+				if !c.IsGroup() {
+					ms = append(ms, c.LeafMesh().Transform(w))
+					continue
+				}
+				if m, ok := meshCache.Load("u:" + c.key()); ok && !c.IsBundle() {
+					ms = append(ms, m.(*geom.Mesh).Transform(w))
+					continue
+				}
+				rec(c, w)
 			}
-			w := xf.Mul(c.M)
-			if !c.IsGroup() {
-				ms = append(ms, c.LeafMesh().Transform(w))
-				continue
-			}
-			if m, ok := meshCache.Load("u:" + c.key()); ok && !c.IsBundle() {
-				ms = append(ms, m.(*geom.Mesh).Transform(w))
-				continue
-			}
-			rec(c, w)
-		}
+		})
 	}
 	rec(n, geom.Identity())
 	m := geom.Merge(ms...)

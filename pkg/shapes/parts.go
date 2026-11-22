@@ -165,7 +165,45 @@ func sizeSlider(def float64) Param { return slider("size", "Size (M)", 2, 12, 0.
 
 // --- hardware & enclosures ---------------------------------------------------------------
 
+// standoffModel is the post with any gussets: thin ribs from the post out
+// along the floor, their tops sloping up to the post, which brace a tall
+// standoff against being snapped off.
 func standoffModel(v Values) *geom.Mesh {
+	post := standoffPost(v)
+	n := int(v.Get("gussets", 0))
+	if n < 1 {
+		return post
+	}
+	h, ro := v.Get("height", 8), v.Get("outer", 6)/2
+	rh := math.Min(v.Get("hole", 2.5)/2, ro-0.4)
+	// each rib starts inside the post's wall (clear of the hole) and its
+	// slope meets the post no further out than the flat of its sides
+	r0 := ro / 2
+	if rh > 0.05 {
+		r0 = (rh + ro) / 2
+	}
+	rIn := ro * math.Cos(math.Pi/48)
+	R := ro + math.Max(0.5, v.Get("gussetl", 4))
+	hg := math.Max(0.5, math.Min(v.Get("gusseth", 5), h))
+	tip := math.Min(0.6, hg/2)
+	t := math.Min(v.Get("gussett", 1.6), ro)
+	if n > 1 { // neighbouring ribs stay apart where they start
+		t = math.Min(t, 1.8*r0*math.Sin(math.Pi/float64(n)))
+	}
+	if t < 0.2 {
+		return post
+	}
+	rib := ExtrudeContours([][]Pt{{{r0, 0}, {R, 0}, {R, tip}, {rIn, hg}, {r0, hg}}}, -t/2, t/2).Transform(outlineToXZ)
+	parts := []*geom.Mesh{post}
+	for k := 0; k < n; k++ {
+		parts = append(parts, rib.Transform(geom.RotateZ(2*math.Pi*float64(k)/float64(n))))
+	}
+	return done(union(parts...))
+}
+
+// standoffPost is the standoff without gussets: the post, its flange and
+// its hole, turned round the axis.
+func standoffPost(v Values) *geom.Mesh {
 	h, od, hole := v.Get("height", 8), v.Get("outer", 6), v.Get("hole", 2.5)
 	fd, ft := v.Get("flange", 10), v.Get("flangeh", 1.5)
 	ro := od / 2
@@ -295,24 +333,69 @@ func nutTrapModel(v Values) *geom.Mesh {
 	return done(geom.Union(pocket, cylZ(0, 0, 0, depth-m.nutH, m.d/2+c, 32)))
 }
 
+// screwTypes are the screw holes' Screw choice: Metric sizes the hole from
+// the M table with clearance; Custom takes the hole's own diameters as
+// they are (no clearance added).
+var screwTypes = []string{"Metric", "Custom"}
+
+// customScrew is whether a screw hole's Screw choice is Custom.
+func customScrew(v Values) bool { return v.Get("screw", 0) >= 0.5 }
+
+// countersinkModel is a countersunk screw's hole: the shank, the cone the
+// head sits in, then Recess straight down from the surface at the head's
+// diameter, so the head sinks below flush. Depth is from the hole's foot
+// to the surface; the hole stands 0.5 mm above it to cut cleanly.
 func countersinkModel(v Values) *geom.Mesh {
-	m := metricFor(v.Get("size", 3))
 	depth := v.Get("depth", 10)
-	rc := m.d/2 + 0.2
-	rk := m.cskD/2 + 0.2
-	cs := rk - rc // 90°
-	depth = math.Max(depth, cs+0.5)
-	return revolve([][2]float64{{0, 0}, {rc, 0}, {rc, depth - cs}, {rk, depth}, {rk, depth + 0.5}, {0, depth + 0.5}}, 48, false)
+	recess := math.Max(0, v.Get("recess", 0))
+	var rc, rk, cs float64
+	if customScrew(v) {
+		rc = v.Get("shaft", 3.4) / 2
+		rk = math.Max(v.Get("head", 6.6)/2, rc+0.05)
+		half := math.Max(15, math.Min(v.Get("angle", 90), 150)) / 2 * math.Pi / 180
+		cs = (rk - rc) / math.Tan(half)
+	} else {
+		m := metricFor(v.Get("size", 3))
+		rc = m.d/2 + 0.2
+		rk = m.cskD/2 + 0.2
+		cs = rk - rc // 90°
+	}
+	depth = math.Max(depth, cs+recess+0.5)
+	prof := [][2]float64{{0, 0}, {rc, 0}, {rc, depth - recess - cs}, {rk, depth - recess}}
+	if recess > 0 {
+		prof = append(prof, [2]float64{rk, depth})
+	}
+	return revolve(append(prof, [2]float64{rk, depth + 0.5}, [2]float64{0, depth + 0.5}), 48, false)
 }
 
+// counterboreModel is a socket cap screw's hole: the shank and the pocket
+// the head sits in. Depth is from the hole's foot to the surface; the hole
+// stands 0.5 mm above it to cut cleanly.
 func counterboreModel(v Values) *geom.Mesh {
-	m := metricFor(v.Get("size", 3))
 	depth := v.Get("depth", 10)
-	rc := m.d/2 + 0.2
-	rb := m.capD/2 + 0.3
-	bd := m.capH + 0.3
+	var rc, rb, bd float64
+	if customScrew(v) {
+		rc = v.Get("shaft", 3.4) / 2
+		rb = math.Max(v.Get("head", 6.4)/2, rc+0.05)
+		bd = v.Get("headdepth", 3.2)
+	} else {
+		m := metricFor(v.Get("size", 3))
+		rc = m.d/2 + 0.2
+		rb = m.capD/2 + 0.3
+		bd = m.capH + 0.3
+	}
 	depth = math.Max(depth, bd+0.5)
 	return revolve([][2]float64{{0, 0}, {rc, 0}, {rc, depth - bd}, {rb, depth - bd}, {rb, depth + 0.5}, {0, depth + 0.5}}, 48, false)
+}
+
+// screwParams are a screw hole's settings after Size and Depth: the
+// Metric or Custom choice and the custom diameters.
+func screwParams(head float64) []Param {
+	return []Param{
+		choice("screw", "Screw", screwTypes, 0),
+		lslider("shaft", "Custom Shaft Dia", 0.5, 30, 0.1, 3.4),
+		lslider("head", "Custom Head Dia", 1, 60, 0.1, head),
+	}
 }
 
 // --- mechanical ------------------------------------------------------------------------
@@ -426,6 +509,11 @@ func springModel(v Values) *geom.Mesh {
 	for j := 0; j < nc; j++ {
 		m.Tris = append(m.Tris, geom.Tri{P: [3]geom.Vec3{c1, prev[j], prev[(j+1)%nc]}})
 	}
+	if v.Get("hand", 0) >= 0.5 {
+		// left hand: the right-hand coil mirrored (Transform turns the
+		// triangles round with it)
+		return m.Clean().Oriented().Transform(geom.Scale(geom.V(-1, 1, 1)))
+	}
 	return m.Clean().Oriented()
 }
 
@@ -509,79 +597,89 @@ func hingeModel(v Values) *geom.Mesh {
 func init() {
 	hw := &HardwareKinds
 	registerPart(hw, "standoff", "PCB Standoff", "#d9d9d9", []Param{
-		lslider("height", "Height", 1, 50, 0.5, 8, false),
-		lslider("outer", "Outer Dia", 2, 20, 0.1, 6, false),
-		lslider("hole", "Hole Dia", 0, 10, 0.1, 2.5, false),
-		lslider("flange", "Flange Dia", 0, 30, 0.5, 10, false),
-		lslider("flangeh", "Flange Height", 0.4, 5, 0.1, 1.5, false),
+		lslider("height", "Height", 1, 50, 0.5, 8),
+		lslider("outer", "Outer Dia", 2, 20, 0.1, 6),
+		lslider("hole", "Hole Dia", 0, 10, 0.1, 2.5),
+		lslider("flange", "Flange Dia", 0, 30, 0.5, 10),
+		lslider("flangeh", "Flange Height", 0.4, 5, 0.1, 1.5),
+		slider("gussets", "Gussets", 0, 6, 1, 0, true),
+		lslider("gussetl", "Gusset Length", 0.5, 50, 0.5, 4),
+		lslider("gusseth", "Gusset Height", 0.5, 50, 0.5, 5),
+		lslider("gussett", "Gusset Thickness", 0.4, 10, 0.1, 1.6),
 	}, standoffModel)
 	registerPart(hw, "plate", "Rounded Plate", "#1a9fe0", []Param{
-		lslider("length", "Length", 5, 300, 1, 50, false),
-		lslider("width", "Width", 5, 300, 1, 30, false),
-		lslider("thickness", "Thickness", 0.4, 20, 0.1, 3, false),
-		lslider("radius", "Corner Radius", 0, 30, 0.5, 4, false),
-		lslider("hole", "Hole Dia", 0, 10, 0.1, 3.2, false),
-		lslider("inset", "Hole Inset", 1, 30, 0.5, 4, false),
+		lslider("length", "Length", 5, 300, 1, 50),
+		lslider("width", "Width", 5, 300, 1, 30),
+		lslider("thickness", "Thickness", 0.4, 20, 0.1, 3),
+		lslider("radius", "Corner Radius", 0, 30, 0.5, 4),
+		lslider("hole", "Hole Dia", 0, 10, 0.1, 3.2),
+		lslider("inset", "Hole Inset", 1, 30, 0.5, 4),
 	}, roundedPlateModel)
 	registerPart(hw, "vent", "Vent Grille", "#9a9a9a", []Param{
-		lslider("length", "Length", 5, 300, 1, 40, false),
-		lslider("width", "Width", 5, 300, 1, 25, false),
-		lslider("thickness", "Thickness", 0.4, 10, 0.1, 2, false),
-		lslider("cell", "Cell Size", 1, 20, 0.5, 4, false),
-		lslider("wall", "Wall", 0.4, 5, 0.1, 1, false),
-		lslider("border", "Border", 0.5, 20, 0.5, 2, false),
+		lslider("length", "Length", 5, 300, 1, 40),
+		lslider("width", "Width", 5, 300, 1, 25),
+		lslider("thickness", "Thickness", 0.4, 10, 0.1, 2),
+		lslider("cell", "Cell Size", 1, 20, 0.5, 4),
+		lslider("wall", "Wall", 0.4, 5, 0.1, 1),
+		lslider("border", "Border", 0.5, 20, 0.5, 2),
 		slider("pattern", "Pattern (Hex/Slots)", 0, 1, 1, 0, true),
 	}, ventModel)
 	registerPart(hw, "hexnut", "Hex Nut", "#9a9a9a", []Param{sizeSlider(3)}, hexNutModel)
-	registerPart(hw, "hexbolt", "Hex Bolt", "#9a9a9a", []Param{sizeSlider(3), lslider("length", "Length", 2, 100, 1, 12, false)}, hexBoltModel)
-	registerPart(hw, "nuttrap", "Nut Trap", "#9a9a9a", []Param{sizeSlider(3), lslider("depth", "Depth", 2, 50, 0.5, 10, false)}, nutTrapModel)
-	registerPart(hw, "countersink", "Countersunk Hole", "#9a9a9a", []Param{sizeSlider(3), lslider("depth", "Depth", 2, 50, 0.5, 10, false)}, countersinkModel)
-	registerPart(hw, "counterbore", "Counterbored Hole", "#9a9a9a", []Param{sizeSlider(3), lslider("depth", "Depth", 2, 50, 0.5, 10, false)}, counterboreModel)
+	registerPart(hw, "hexbolt", "Hex Bolt", "#9a9a9a", []Param{sizeSlider(3), lslider("length", "Length", 2, 100, 1, 12)}, hexBoltModel)
+	registerPart(hw, "nuttrap", "Nut Trap", "#9a9a9a", []Param{sizeSlider(3), lslider("depth", "Depth", 2, 50, 0.5, 10)}, nutTrapModel)
+	registerPart(hw, "countersink", "Countersunk Hole", "#9a9a9a", append(append([]Param{sizeSlider(3), lslider("depth", "Depth", 2, 50, 0.5, 10)},
+		screwParams(6.6)...),
+		slider("angle", "Custom Head Angle", 30, 150, 1, 90, false),
+		lslider("recess", "Recess", 0, 20, 0.1, 0)), countersinkModel)
+	registerPart(hw, "counterbore", "Counterbored Hole", "#9a9a9a", append(append([]Param{sizeSlider(3), lslider("depth", "Depth", 2, 50, 0.5, 10)},
+		screwParams(6.4)...),
+		lslider("headdepth", "Custom Head Depth", 0.2, 50, 0.1, 3.2)), counterboreModel)
 	for _, id := range []string{"nuttrap", "countersink", "counterbore"} {
 		HoleKinds[id] = true
 	}
 
 	mk := &MechanicalKinds
 	registerPart(mk, "spurgear", "Spur Gear", "#c8ccd0", []Param{
-		mslider("module", "Module", 0.3, 5, 0.1, 1, false),
+		mslider("module", "Module", 0.3, 5, 0.1, 1),
 		slider("teeth", "Teeth", 8, 120, 1, 20, true),
-		lslider("thickness", "Thickness", 0.5, 50, 0.5, 5, false),
-		lslider("bore", "Bore Dia", 0, 50, 0.5, 5, false),
+		lslider("thickness", "Thickness", 0.5, 50, 0.5, 5),
+		lslider("bore", "Bore Dia", 0, 50, 0.5, 5),
 	}, spurGearModel)
 	registerPart(mk, "gearrack", "Gear Rack", "#c8ccd0", []Param{
-		mslider("module", "Module", 0.3, 5, 0.1, 1, false),
+		mslider("module", "Module", 0.3, 5, 0.1, 1),
 		slider("teeth", "Teeth", 1, 100, 1, 10, true),
-		lslider("thickness", "Thickness", 0.5, 50, 0.5, 5, false),
-		lslider("back", "Back Height", 0.5, 30, 0.5, 4, false),
+		lslider("thickness", "Thickness", 0.5, 50, 0.5, 5),
+		lslider("back", "Back Height", 0.5, 30, 0.5, 4),
 	}, gearRackModel)
 	registerGears(mk)
 	registerPart(mk, "elbow", "Pipe Elbow", "#7a3fc0", []Param{
 		slider("angle", "Angle", 5, 360, 1, 90, false),
-		lslider("bend", "Bend Radius", 1, 100, 0.5, 15, false),
-		lslider("diameter", "Outer Dia", 1, 50, 0.5, 10, false),
-		lslider("wall", "Wall", 0.2, 20, 0.1, 1.5, false),
+		lslider("bend", "Bend Radius", 1, 100, 0.5, 15),
+		lslider("diameter", "Outer Dia", 1, 50, 0.5, 10),
+		lslider("wall", "Wall", 0.2, 20, 0.1, 1.5),
 	}, pipeElbowModel)
 	registerPart(mk, "spring", "Spring", "#9a9a9a", []Param{
 		slider("turns", "Turns", 0.5, 30, 0.5, 5, false),
-		lslider("diameter", "Coil Dia", 2, 100, 0.5, 20, false),
-		lslider("wire", "Wire Dia", 0.4, 10, 0.1, 2, false),
-		lslider("pitch", "Pitch", 0.5, 30, 0.1, 4, false),
+		lslider("diameter", "Coil Dia", 2, 100, 0.5, 20),
+		lslider("wire", "Wire Dia", 0.4, 10, 0.1, 2),
+		lslider("pitch", "Pitch", 0.5, 30, 0.1, 4),
+		choice("hand", "Hand", []string{"Right", "Left"}, 0),
 	}, springModel)
 	registerPart(mk, "knob", "Knurled Knob", "#1f1f1f", []Param{
-		lslider("diameter", "Diameter", 5, 100, 0.5, 20, false),
-		lslider("height", "Height", 2, 50, 0.5, 12, false),
+		lslider("diameter", "Diameter", 5, 100, 0.5, 20),
+		lslider("height", "Height", 2, 50, 0.5, 12),
 		slider("knurls", "Knurls", 6, 90, 1, 24, true),
-		lslider("depth", "Knurl Depth", 0.1, 5, 0.1, 1, false),
-		lslider("shaft", "Shaft Dia", 0, 20, 0.1, 6, false),
+		lslider("depth", "Knurl Depth", 0.1, 5, 0.1, 1),
+		lslider("shaft", "Shaft Dia", 0, 20, 0.1, 6),
 		slider("dshaft", "D-Shaft", 0, 1, 1, 1, true),
 	}, knobModel)
 	registerPart(mk, "hinge", "Hinge", "#2fa84f", []Param{
-		lslider("length", "Length", 10, 200, 1, 30, false),
-		lslider("leaf", "Leaf Width", 3, 100, 0.5, 15, false),
-		lslider("thickness", "Thickness", 0.8, 10, 0.1, 2, false),
-		lslider("knuckle", "Knuckle Dia", 3, 30, 0.5, 6, false),
-		lslider("pin", "Pin Dia", 1, 20, 0.1, 3, false),
-		lslider("clearance", "Clearance", 0.1, 1.5, 0.05, 0.4, false),
+		lslider("length", "Length", 10, 200, 1, 30),
+		lslider("leaf", "Leaf Width", 3, 100, 0.5, 15),
+		lslider("thickness", "Thickness", 0.8, 10, 0.1, 2),
+		lslider("knuckle", "Knuckle Dia", 3, 30, 0.5, 6),
+		lslider("pin", "Pin Dia", 1, 20, 0.1, 3),
+		lslider("clearance", "Clearance", 0.1, 1.5, 0.05, 0.4),
 		slider("knuckles", "Knuckles", 3, 15, 2, 5, true),
 	}, hingeModel)
 }

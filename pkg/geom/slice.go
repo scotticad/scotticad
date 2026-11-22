@@ -2,6 +2,7 @@ package geom
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -116,7 +117,7 @@ func WriteSVG(w io.Writer, loops [][]Vec3) error {
 		}
 	}
 	if b.IsEmpty() {
-		return fmt.Errorf("nothing to draw")
+		return errors.New("nothing to draw")
 	}
 	const margin = 1.0
 	minX, maxY := b.Min.X-margin, b.Max.Y+margin

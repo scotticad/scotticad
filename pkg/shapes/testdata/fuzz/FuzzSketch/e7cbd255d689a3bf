@@ -1,0 +1,8 @@
+go test fuzz v1
+[]byte("\x8d7\xac0000\v0200!1ab0\x15x000")
+byte('\x02')
+float64(-80)
+float64(-44)
+float64(6)
+float64(48)
+float64(3.2)

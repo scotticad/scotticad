@@ -117,14 +117,19 @@ func filletMesh(s geom.Vec3, v Values) *geom.Mesh {
 // Y, its outline's Y becoming Z.
 var outlineToXZ = geom.Mat4{1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1}
 
-// teardropModel is a round bar lying along Y whose top comes to a point
-// at 45°, so as a hole it prints without support; Flat Top cuts the point
-// off level with the top of the circle.
+// teardropModel is a round bar lying along Y whose top comes to a point,
+// so as a hole it prints without support; Flat Top cuts the point off
+// level with the top of the circle. Tip Angle is the angle between the
+// point's two sides: 90° (sides at 45°) unless set.
 func teardropModel(v Values) *geom.Mesh {
 	r := v.Get("diameter", 10) / 2
 	l := v.Get("length", 20)
 	// steps of at most 45° divide the arc at the sides and the bottom
 	k := max(1, int(math.Round(v.Get("sides", 48)*0.75/6)))
+	tip := math.Max(40, math.Min(v.Get("tip", 90), 140))
+	if tip != 90 {
+		return ExtrudeContours([][]Pt{teardropOutline(r, tip, k, v.Get("flat", 0) >= 0.5)}, -l/2, l/2).Transform(outlineToXZ)
+	}
 	n := 6 * k
 	var prof []Pt
 	for i := 0; i <= n; i++ { // 135° round the bottom to 45°
@@ -138,6 +143,42 @@ func teardropModel(v Values) *geom.Mesh {
 		prof = append(prof, Pt{0, r * math.Sqrt2})
 	}
 	return ExtrudeContours([][]Pt{prof}, -l/2, l/2).Transform(outlineToXZ)
+}
+
+// teardropOutline is a teardrop's outline for a tip angle other than 90°
+// (a 90° tip keeps its own points, so existing designs build the same): the
+// circle of radius r from where the left side touches it, round the
+// bottom, to where the right side touches it, then the point. The arc is
+// cut at the sides and the bottom, so the outline is exactly 2r wide and
+// reaches exactly −r, with the 90° tip's spacing (k steps in 45°).
+func teardropOutline(r, tip float64, k int, flat bool) []Pt {
+	half := tip / 2 * math.Pi / 180 // the sides touch the circle at ±half from +X
+	rise := r / math.Sin(half)      // the point above the centre
+	var prof []Pt
+	add := func(a0, a1 float64, steps int, first bool) {
+		for i := 0; i <= steps; i++ {
+			if i == 0 && !first {
+				continue
+			}
+			a := a0 + (a1-a0)*float64(i)/float64(steps)
+			prof = append(prof, Pt{r * math.Cos(a), r * math.Sin(a)})
+		}
+	}
+	side := max(1, int(math.Round(float64(k)*half/(math.Pi/4))))
+	add(math.Pi-half, math.Pi, side, true)
+	add(math.Pi, 1.5*math.Pi, 2*k, false)
+	add(1.5*math.Pi, 2*math.Pi, 2*k, false)
+	add(2*math.Pi, 2*math.Pi+half, side, false)
+	// the ends of the arc, the extremes exact
+	prof[side] = Pt{-r, 0}
+	prof[side+2*k] = Pt{0, -r}
+	prof[side+4*k] = Pt{r, 0}
+	if flat && rise > r {
+		// where the sides cross y = r
+		x := r * math.Cos(half) * (rise - r) / (rise - r*math.Sin(half))
+		return append(prof, Pt{x, r}, Pt{-x, r})
+	}
+	return append(prof, Pt{0, rise})
 }
 
 // --- crystal ---------------------------------------------------------------------------

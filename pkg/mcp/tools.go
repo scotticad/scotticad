@@ -28,7 +28,7 @@ var toolSet = map[string]int{
 	"get_state": full, "list_nodes": core, "get_node": core, "shape_kinds": full,
 	"version": never, "fonts": full,
 	// creation
-	"add_shape": core, "add_outline": full, "add_loft": full, "set_outline": full, "set_loft": full, "set_bends": full,
+	"add_shape": core, "add_outline": full, "add_loft": full, "set_outline": full, "set_loft": full, "set_bends": full, "add_sketch": full, "set_sketch": full,
 	// notes
 	"add_note": never, "notes": never, "set_note_text": never, "delete_note": never,
 	// import and export
@@ -45,7 +45,7 @@ var toolSet = map[string]int{
 	// visibility
 	"hide": full, "toggle_hidden": never, "show_all": full,
 	// grouping
-	"group": core, "ungroup": full, "set_group_mode": full,
+	"group": core, "ungroup": full, "set_group_mode": full, "pattern": full, "stretch": full,
 	// split, lay flat and section view
 	"split": full, "lay_flat": full, "set_section": full,
 	// filament
@@ -61,6 +61,8 @@ var toolSet = map[string]int{
 	"get_camera": full, "set_camera": core, "home_view": full, "fit_view": core, "screenshot": core,
 	"project": never, "get_ui_state": never, "list_controls": never, "list_handles": never,
 	"click_control": never,
+	"edit_sketch":   never, "sketch_state": never, "sketch_tool": never, "sketch_view": never, "sketch_done": never, "sketch_cancel": never,
+	"sketch_image": never, "sketch_image_remove": never, // (the workspace's, as above)
 	// input simulation: an assistant clicking its way round the window is
 	// fragile and slow
 	"mouse_move": never, "mouse_down": never, "mouse_up": never, "click": never, "drag": never,
@@ -104,8 +106,33 @@ var schemas = map[string]map[string]any{
 		map[string]any{"type": "array", "items": point2},
 		map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": point2}},
 	}},
-	"[z, float[][2]][]":       {"type": "array", "items": map[string]any{"type": "array", "minItems": 2, "maxItems": 2}},
-	"[length, angle, turn][]": {"type": "array", "minItems": 1, "items": map[string]any{"type": "array", "items": map[string]any{"type": "number"}, "minItems": 1, "maxItems": 3}},
+	"[z, float[][2]][]": {"type": "array", "items": map[string]any{"type": "array", "minItems": 2, "maxItems": 2}},
+	"[length, angle, turn][]": {"type": "array", "minItems": 1, "items": map[string]any{"anyOf": []any{
+		map[string]any{"type": "array", "items": map[string]any{"type": "number"}, "minItems": 1, "maxItems": 3},
+		// (the API takes a bend as an object too, as the description says)
+		map[string]any{"type": "object", "properties": map[string]any{
+			"length": map[string]any{"type": "number"}, "angle": map[string]any{"type": "number"}, "turn": map[string]any{"type": "number"}}},
+	}}},
+	"path[]": {"type": "array", "items": map[string]any{
+		"type":     "object",
+		"required": []string{"points"},
+		"properties": map[string]any{
+			"points": map[string]any{"type": "array", "items": map[string]any{"anyOf": []any{point2, map[string]any{
+				"type":     "object",
+				"required": []string{"p"},
+				"properties": map[string]any{
+					"p": point2, "in": point2, "out": point2,
+					"kind": map[string]any{"type": "string", "enum": []string{"corner", "smooth", "auto"}},
+				},
+			}}}},
+			"closed": map[string]any{"type": "boolean"},
+			"stroke": map[string]any{"type": "number", "minimum": 0},
+			"join":   map[string]any{"type": "string", "enum": []string{"sharp", "round", "bevel"}},
+			"cap":    map[string]any{"type": "string", "enum": []string{"flat", "round", "square"}},
+			"align":  map[string]any{"type": "string", "enum": []string{"center", "inside", "outside"}},
+			"hole":   map[string]any{"type": "boolean"},
+		},
+	}},
 }
 
 var point2 = map[string]any{"type": "array", "items": map[string]any{"type": "number"}, "minItems": 2, "maxItems": 2}

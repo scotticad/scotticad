@@ -194,7 +194,7 @@ def test_save_open_preserves_tree(cad, tmp_path):
 
 def test_export_and_import_roundtrip(cad, tmp_path):
     cad.add_shape("box")
-    for ext in ("stl", "obj"):
+    for ext in ("stl", "obj", "3mf"):
         p = str(tmp_path / f"out.{ext}")
         cad.export(p)
         assert os.path.getsize(p) > 0
@@ -684,6 +684,146 @@ def test_intersect_group(cad):
     assert n["group_mode"] == "intersect" and n["label"] == "Intersect"
     assert math.isclose(n["volume"], 4000, rel_tol=1e-6)
     assert sorted(cad.ungroup(ids=[g])) == sorted([a, b])
+
+
+def test_hull_group(cad, tmp_path):
+    """Hull wraps a group's solids in one skin: two 20 mm boxes 40 mm apart
+    fill the gap between them. It is the fourth Group type button, cuts its
+    holes like a union, ungroups to its shapes, and exports closed."""
+    a = cad.add_shape("box")
+    b = cad.add_shape("box", x=60)
+    g = cad.group("union", ids=[a, b])
+    assert math.isclose(cad.node(g)["volume"], 16000, rel_tol=1e-6)
+    cad.select([g])
+    cad.click_control("insp-gt-hull")
+    n = cad.node(g)
+    assert n["group_mode"] == "hull" and n["label"] == "Hull"
+    assert math.isclose(n["volume"], 32000, rel_tol=1e-6)
+    assert approx(n["bounds"]["size"], [80, 20, 20], 1e-6)
+    assert cad.undo() and cad.node(g)["group_mode"] == "union"
+    assert sorted(cad.ungroup(ids=[g])) == sorted([a, b])
+    # from the API, with a hole in the gap: it is cut from the hull
+    h = cad.add_shape("box", x=30, hole=True)
+    cad.set_size(x=10, y=10, z=40, ids=[h])
+    g = cad.group("hull", ids=[a, b, h])
+    assert math.isclose(cad.node(g)["volume"], 32000 - 10 * 10 * 20, rel_tol=1e-6)
+    cad.set_group_mode("union", ids=[g])
+    assert math.isclose(cad.node(g)["volume"], 16000, rel_tol=1e-6)
+    cad.set_group_mode("hull", ids=[g])
+    p = tmp_path / "hull.stl"
+    cad.export(str(p))
+    cad.new_design()
+    i = cad.import_file(str(p))
+    assert math.isclose(cad.node(i)["volume"], 30000, rel_tol=1e-5)
+    with pytest.raises(ScottiCADError):
+        cad.set_group_mode("wrap", ids=[i])
+
+
+def test_pattern(cad, tmp_path):
+    """A pattern repeats what is selected in a grid or round a circle: one
+    group holding the shape and the numbers, so each copy follows a change.
+    The Pattern tool (P) makes a row of three; Properties has its settings;
+    ungrouping gives the copies as shapes."""
+    a = cad.add_shape("box")
+    cad.select([a])
+    cad.click_control("pattern")
+    (g,) = cad.selection()["ids"]
+    n = cad.node(g)
+    assert n["group_mode"] == "pattern" and n["label"] == "Pattern" and n["copies"] == 3 and n["child_count"] == 1
+    assert approx(n["bounds"]["min"], [-10, -10, 0], 1e-9) and approx(n["bounds"]["size"], [80, 20, 20], 1e-9)
+    assert n["params"]["dx"] == 30 and n["params"]["columns"] == 3
+    # its settings in Properties: typed into, and picked from the list
+    ids = {c["id"] for c in cad.controls()}
+    assert {"param-type", "param-columns", "param-rows", "param-dx", "param-dy", "param-stagger"} <= ids
+    assert not {"param-count", "param-radius", "insp-gt-union"} & ids
+    cad.click_control("param-columns")
+    cad.type_text("5")
+    cad.key("enter")
+    cad.click_control("param-dx")
+    cad.type_text("25")
+    cad.key("enter")
+    n = cad.node(g)
+    assert n["copies"] == 5 and approx(n["bounds"]["size"], [120, 20, 20], 1e-9)
+    assert math.isclose(n["volume"], 5 * 8000, rel_tol=1e-9)
+    cad.click_control("param-type")
+    cad.click_control("param-type-Circle")
+    ids = {c["id"] for c in cad.controls()}
+    assert {"param-count", "param-radius", "param-angle", "param-turn"} <= ids and "param-columns" not in ids
+    n = cad.node(g)
+    assert n["params"]["type"] == 1 and n["copies"] == 6 and n["params"]["radius"] == 30
+    # round a center 30 mm to the box's left, each copy turned with the circle
+    far = 15 * math.sqrt(3) + 10 * (math.cos(math.pi / 3) + math.sin(math.pi / 3))
+    assert approx(n["bounds"]["min"], [-70, -far, 0], 1e-6) and approx(n["bounds"]["max"], [10, far, 20], 1e-6)
+    # each step is undone on its own
+    assert cad.undo() and cad.node(g)["params"]["type"] == 0 and cad.node(g)["copies"] == 5
+    # the shape inside changed: every copy changes
+    cad.set_param(a, "height", 5)
+    assert math.isclose(cad.node(g)["volume"], 5 * 2000, rel_tol=1e-9)
+    # ungrouped: five boxes where they were shown
+    out = cad.ungroup(ids=[g])
+    assert len(out) == 5 and out[0] == a and len(set(out)) == 5
+    assert sorted(round(cad.node(i)["bounds"]["min"][0], 6) for i in out) == [-10, 15, 40, 65, 90]
+    assert cad.undo() and cad.node(g)["copies"] == 5
+
+    # P makes one too; from the API, with its settings
+    cad.new_design()
+    b = cad.add_shape("cylinder")
+    cad.select([b])
+    cad.key("p")
+    (g,) = cad.selection()["ids"]
+    assert cad.node(g)["group_mode"] == "pattern"
+    cad.new_design()
+    plate = cad.add_shape("box")
+    cad.set_bounds([-50, -50, 0], [50, 50, 4], ids=[plate])
+    hole = cad.add_shape("cylinder", x=30, hole=True)
+    cad.set_size(x=6, y=6, z=20, ids=[hole])
+    p = cad.pattern("circle", count=6, radius=30, ids=[hole])
+    n = cad.node(p)
+    assert n["copies"] == 6 and not n["hole"] and approx(n["bounds"]["size"], [66, 6 + 60 * math.sin(math.pi / 3), 20], 0.1)
+    whole = cad.node(plate)["volume"]
+    g = cad.group("union", ids=[plate, p])
+    one = math.pi * 9 * 4 * 0.9  # a little less than a round hole's: it has flat sides
+    cut = whole - cad.node(g)["volume"]
+    assert 6 * one < cut < 6 * math.pi * 9 * 4
+    # a setting of the pattern inside the group: the plate is cut again
+    cad.set_param(p, "count", 3)
+    assert math.isclose(whole - cad.node(g)["volume"], cut / 2, rel_tol=1e-6)
+    # saved and opened again, and exported closed
+    f = tmp_path / "pattern.scotticad"
+    cad.save(str(f))
+    cad.open(str(f))
+    (top,) = cad.nodes(deep=True)
+    assert [c["group_mode"] for c in top["children"] if c["kind"] == "group"] == ["pattern"]
+    assert math.isclose(whole - top["volume"], cut / 2, rel_tol=1e-6)
+    stl = tmp_path / "pattern.stl"
+    cad.export(str(stl))
+    cad.new_design()
+    i = cad.import_file(str(stl))
+    assert math.isclose(cad.node(i)["volume"], whole - cut / 2, rel_tol=1e-4)
+    assert all(part["status"] != "warning" for part in cad.print_check()["parts"])
+    # what it refuses
+    cad.new_design()
+    with pytest.raises(ScottiCADError):
+        cad.pattern()  # nothing selected
+    c = cad.add_shape("box")
+    with pytest.raises(ScottiCADError):
+        cad.pattern("spiral", ids=[c])
+    with pytest.raises(ScottiCADError):
+        cad.set_group_mode("pattern", ids=[c])
+    p = cad.pattern(columns=99, rows=0, ids=[c])
+    assert cad.node(p)["params"]["columns"] == 50 and cad.node(p)["params"]["rows"] == 1
+    with pytest.raises(ScottiCADError):
+        cad.set_param(p, "sides", 4)
+    # a script makes one the same way
+    cad.new_design()
+    r = cad.run_script("""
+b = cad.add_shape("box")
+p = cad.pattern(columns=2, rows=2, dx=40, dy=40, stagger=True, ids=[b])
+cad.set_param(p, "rows", 3)
+print(cad.node(p)["copies"])
+""")
+    assert not r["error"], r
+    assert cad.nodes()[0]["copies"] == 6 and approx(cad.nodes()[0]["bounds"]["size"], [80, 100, 20], 1e-9)
 
 
 def test_file_menu_button_and_alt_f(cad):

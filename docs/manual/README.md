@@ -6,7 +6,7 @@ into holes, and group them so the holes are cut away. Then you export the
 part for your 3D printer.
 
 This manual starts with a short tutorial and then covers each part of the
-program in turn. It describes ScottiCAD 0.3.
+program in turn. It describes ScottiCAD 0.4.
 
 ![The ScottiCAD window, with a key tag on the build plate](images/tour-window.png)
 
@@ -21,15 +21,16 @@ program in turn. It describes ScottiCAD 0.3.
 
 **Building**
 
-3. [Shapes](03-shapes.md): the shape panel, properties, colours and text
+3. [Shapes](03-shapes.md): the shape panel, properties, colours, text,
+   and drawing your own shapes as sketches
 4. [Moving, sizing and turning](04-moving-and-sizing.md): selecting,
    handles, exact sizes and the snap grid
-5. [Holes and groups](05-holes-and-groups.md): cutting shapes away and
-   joining them
+5. [Holes and groups](05-holes-and-groups.md): cutting shapes away,
+   joining them and repeating them in patterns
 6. [Lining up and measuring](06-aligning-and-measuring.md): align, mirror,
    the ruler, the construction plane and notes
-7. [Split and section view](07-split-and-section.md): cutting a part in
-   two, and looking inside one
+7. [Split, stretch and section view](07-split-and-section.md): cutting a part in
+   two, making it longer or shorter, and looking inside one
 
 **Files and printing**
 

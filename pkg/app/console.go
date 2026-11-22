@@ -93,7 +93,7 @@ func (a *App) initConsole() {
 		}
 		return ""
 	}
-	c.addLine(conLine{kind: script.Info, text: "ScottiCAD scripting — Starlark, a dialect of Python. Type help() for the cad methods."})
+	c.addLine(conLine{kind: script.Info, text: "ScottiCAD scripting: Starlark, a dialect of Python. Type help() for the cad methods."})
 }
 
 // scriptCall is the scripts' route to the API: JSON in, JSON out, through
@@ -335,7 +335,7 @@ func (a *App) runEditor() {
 	}()
 }
 
-// runScriptFile is File → Run script…: open a script into the Editor tab
+// runScriptFile is File -> Run script…: open a script into the Editor tab
 // and run it.
 func (a *App) runScriptFile() {
 	if !a.openScript() {

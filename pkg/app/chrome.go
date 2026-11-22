@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/scotticad/scotticad/pkg/doc"
+	"github.com/scotticad/scotticad/pkg/geom"
 	"github.com/scotticad/scotticad/pkg/render"
 	"github.com/scotticad/scotticad/pkg/shapes"
 	"github.com/scotticad/scotticad/pkg/window"
@@ -165,9 +166,11 @@ func (a *App) rightTools() []tool {
 		{id: "union", tip: "Union Group", key: "Ctrl + G", icon: icUnion, enabled: multi, click: func() { a.group(doc.ModeUnion) }},
 		{id: "ungroup", tip: "Ungroup", key: "Ctrl + Shift + G", icon: icUngroup, enabled: hasGroup, click: func() { ed.Ungroup() }},
 		{id: "split", tip: "Split", key: "K", icon: icSplit, enabled: len(ed.Editable()) > 0, active: a.mode == modeSplit, click: func() { a.setMode(modeSplit) }},
+		{id: "stretch", tip: "Stretch", key: "T", icon: icStretch, enabled: len(ed.Editable()) > 0, active: a.mode == modeStretch, click: func() { a.setMode(modeStretch) }},
 		{id: "section", tip: "Section view", key: "Shift + K", icon: icSection, enabled: len(ed.Doc.Nodes) > 0 || a.section.on, active: a.section.on, click: func() { a.setSection(!a.section.on) }},
 		{id: "align", tip: "Align", key: "L", icon: icAlign, enabled: len(ed.Editable()) > 0, active: a.mode == modeAlign, click: func() { a.setMode(modeAlign) }},
 		{id: "mirror", tip: "Mirror", key: "M", icon: icMirror, enabled: len(ed.Editable()) > 0, active: a.mode == modeMirror, click: func() { a.setMode(modeMirror) }},
+		{id: "pattern", tip: "Pattern", key: "P", icon: icPattern, enabled: len(ed.Editable()) > 0, click: a.pattern},
 		{id: "cruise", tip: "Place on surface", key: "C", icon: icCruise, enabled: sel || a.cruise, active: a.cruise, click: func() { a.cruise = !a.cruise }},
 		{id: "measure", tip: "Measure", key: "", icon: icMeasure, enabled: true, active: a.mode == modeMeasure, click: func() { a.setMode(modeMeasure) }},
 		{id: "shapewp", tip: "Construction plane on shape", icon: icShapeWP, enabled: sel || ed.Workplane != nil, active: ed.Workplane != nil, click: func() {
@@ -235,7 +238,7 @@ func (a *App) drawToolbar() {
 		click     func()
 	}{
 		{"import", "Import", false, func() { a.openPopup(popImport) }},
-		{"export", "Export", false, func() { a.exportSel = len(a.ed.Sel) > 0; a.openPopup(popExport) }},
+		{"export", "Export", false, a.openExport},
 		{"scripting", "Scripting", a.con.open, a.toggleConsole},
 	} {
 		br := render.Rect{X: bx, Y: y + 8, W: 74, H: toolbarH - 16}
@@ -287,8 +290,9 @@ type tile struct {
 	hole bool
 }
 
-// tileOrder is the Basic Shapes library: the three hole shapes first, then
-// the solids.
+// tileOrder is the Basic Shapes library: the three hole shapes first, the
+// three basic solids, then the rest of the solids. (The shapes you draw
+// have their own row under the tool tabs.)
 var tileOrder = []tile{
 	{"box", true}, {"cylinder", true}, {"sphere", true},
 	{"box", false}, {"cylinder", false}, {"sphere", false},
@@ -300,7 +304,8 @@ var tileOrder = []tile{
 	{"star3d", false}, {"star", false}, {"heart", false},
 	{"dice", false}, {"diamond", false}, {"paraboloid", false},
 	{"slot", false}, {"arc", false}, {"fillet", false},
-	{"teardrop", false}, {"crystal", false},
+	{"teardrop", false}, {"crystal", false}, {"roundedbox", false},
+	{"crescent", false},
 }
 
 var libraries = []string{"Basic Shapes", "Parametric", "Hardware & Enclosures", "Mechanical", "Computers & Networking", "All Shapes"}
@@ -346,7 +351,7 @@ var shapeKeywords = map[string]string{
 	"gear":         "cog sprocket wheel teeth",
 	"projectbox":   "enclosure case box lid hollow container",
 	"extrudedbox":  "enclosure case aluminium aluminum extrusion tube end panels",
-	"standoff":     "pcb spacer boss mount screw",
+	"standoff":     "pcb spacer boss mount screw gusset rib",
 	"plate":        "base panel mounting holes",
 	"vent":         "grille grill honeycomb hex slots airflow",
 	"hexnut":       "nut hardware metric screw",
@@ -361,7 +366,7 @@ var shapeKeywords = map[string]string{
 	"planetary":    "gear planetary epicyclic sun planet ring print in place bearing fidget spinner",
 	"elbow":        "pipe tube bend curved",
 	"benttube":     "tube pipe bend bent rail frame roll cage handrail hoop bender",
-	"spring":       "coil helix",
+	"spring":       "coil helix left hand right hand",
 	"knob":         "knurled potentiometer dial handle",
 	"hinge":        "print in place joint",
 	"laptop":       "computer notebook pc",
@@ -391,6 +396,13 @@ var shapeKeywords = map[string]string{
 	"dovetail":     "joint join key socket split connector puzzle",
 	"alignpin":     "dowel pin peg joint join locating register split",
 	"qrcode":       "qr code barcode link url wifi scan",
+	"roundedbox":   "rounded rectangle corner radius fillet soft edges enclosure lid tray cube",
+	"crescent":     "moon half moon sickle horn banana arc",
+	"port":         "connector socket cutout cut out opening usb usb-c hdmi displayport rj45 ethernet xt60 xt30 mt60 powerpole d-sub serial",
+
+	"finishingwasher": "rosette screw cup cup washer countersunk countersink trim panel decorative",
+	"gridfinitybin":   "gridfinity storage bin box tray drawer organizer organiser compartment divider stackable",
+	"gridfinityplate": "gridfinity baseplate base plate grid drawer organizer organiser storage magnet",
 }
 
 // searchTiles returns every library tile (once) whose name or keywords
@@ -477,7 +489,7 @@ func tilesFor(library string) []tile {
 	case "All Shapes":
 		var out []tile
 		for _, k := range shapes.All() {
-			if k.Hidden {
+			if k.Hidden || shapes.IsSketch(k.ID) {
 				continue
 			}
 			out = append(out, tile{k.ID, shapes.HoleKinds[k.ID]})
@@ -552,10 +564,30 @@ func (a *App) drawShapePanel() {
 		drawIcon(b, t.icon, render.Rect{X: r.CX() - 14, Y: r.CY() - 14, W: 28, H: 28}, colTabIcon)
 		a.button(t.id, r, t.tip, t.key, tipBelow, t.click)
 	}
-	b.Fill(render.Rect{X: pr.X + 10, Y: pr.Y + 56, W: pr.W - 20, H: 1}, colBorder)
+	b.Fill(render.Rect{X: pr.X + 34, Y: pr.Y + 56, W: pr.W - 68, H: 1}, colBorder)
+
+	// the shapes you draw: drag onto the plate, or click and then click the
+	// plate, like a library tile
+	for i, s := range []struct {
+		kind string
+		icon int
+	}{{"sketch", icToolSketch}, {"revolve", icToolRevolve}, {"coil", icToolCoil}} {
+		r := render.Rect{X: pr.X + float64(i)*tw, Y: pr.Y + 58, W: tw, H: 44}
+		id := "tile-" + s.kind
+		if a.isHot(id) || (a.place != nil && a.place.kind == s.kind) {
+			b.RoundRect(r.Inset(6), 4, colBlueLight)
+		}
+		col := geom.ParseColor(kindColor(s.kind))
+		drawIconAccent(b, s.icon, render.Rect{X: r.CX() - 14, Y: r.CY() - 14, W: 28, H: 28}, colTabIcon, render.Color{col.R, col.G, col.B, 1})
+		a.reg(region{r: r, id: id, cursor: window.CursorHand, tip: kindLabel(s.kind, false), tipSide: tipBelow,
+			press: func(x, y float64, m window.Mods) func(float64, float64, bool) {
+				return a.tilePress(s.kind, false, x, y)
+			}})
+	}
+	b.Fill(render.Rect{X: pr.X + 10, Y: pr.Y + 108, W: pr.W - 20, H: 1}, colBorder)
 
 	// library dropdown and search
-	lr := render.Rect{X: pr.X + 10, Y: pr.Y + 66, W: pr.W - 56, H: 30}
+	lr := render.Rect{X: pr.X + 10, Y: pr.Y + 118, W: pr.W - 56, H: 30}
 	tilesTop := lr.Y + lr.H + 10
 	tiles := a.libraryTiles()
 	if a.searchOn {

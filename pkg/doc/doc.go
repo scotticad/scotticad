@@ -28,7 +28,8 @@ import (
 //	1: everything before 2
 //	2: outline and loft shapes (Node.Sections)
 //	3: bent tubes (Node.Bends)
-const FormatVersion = 3
+//	4: sketches (Node.Sketch)
+const FormatVersion = 4
 
 // maxNodeID is the largest id a file may give a node (larger ones are
 // renumbered): ids count up from the largest, and must not overflow.
@@ -41,7 +42,15 @@ const (
 	ModeUnion     = "union"
 	ModeBundle    = "bundle"
 	ModeIntersect = "intersect"
+	// ModeHull wraps the solid children in their convex hull. A ScottiCAD
+	// from before it existed reads any mode it doesn't know as a union.
+	ModeHull = "hull"
 )
+
+// ValidMode is whether mode names a group mode.
+func ValidMode(mode string) bool {
+	return mode == ModeUnion || mode == ModeBundle || mode == ModeIntersect || mode == ModeHull
+}
 
 // Node is a shape, an imported mesh, or a group of nodes.
 //
@@ -74,7 +83,10 @@ type Node struct {
 	// Bends are a bent tube's bend table (see shapes.Bend), replaced the
 	// same way.
 	Bends []shapes.Bend `json:"bends,omitempty"`
-	Notes []Note        `json:"notes,omitempty"`
+	// Sketch is a sketch shape's drawing (see shapes.Sketch), replaced the
+	// same way.
+	Sketch *shapes.Sketch `json:"sketch,omitempty"`
+	Notes  []Note         `json:"notes,omitempty"`
 	// Assembly, on a bundle group, is the assembly kind it was placed as
 	// (its Params are the assembly's); see shapes.Placed.
 	Assembly string `json:"assembly,omitempty"`
@@ -88,6 +100,9 @@ type Node struct {
 	secHash    string
 	secHashOf  *shapes.Section
 	secHashLen int
+	// the same for Sketch
+	skHash   string
+	skHashOf *shapes.Sketch
 }
 
 // Note is a text note pinned to a point on a shape. It belongs to the node
@@ -126,12 +141,23 @@ func (n *Node) NoteParam(local geom.Vec3) geom.Vec3 {
 // matrix keeps its scale; Normalize folds it into Size otherwise).
 func (n *Node) AxisLength(axis int) float64 { return n.Size.Axis(axis) * n.M.Col(axis).Len() }
 
-func (n *Node) IsGroup() bool  { return n.Kind == KindGroup }
-func (n *Node) IsBundle() bool { return n.IsGroup() && n.GroupMode == ModeBundle }
+func (n *Node) IsGroup() bool { return n.Kind == KindGroup }
 
-// IsUnion reports a group that combines its parts (union or intersect),
-// as opposed to a bundle.
-func (n *Node) IsUnion() bool { return n.IsGroup() && n.GroupMode != ModeBundle }
+// IsBundle reports a group that keeps its parts apart: a bundle, a
+// pattern (a bundle shown several times over; see Copies), or a stretch (a
+// bundle lengthened or shortened at a plane; see stretch.go).
+func (n *Node) IsBundle() bool {
+	return n.IsGroup() && (n.GroupMode == ModeBundle || n.GroupMode == ModePattern || n.GroupMode == ModeStretch)
+}
+
+// IsUnion reports a group that combines its parts (union, intersect or
+// hull), as opposed to a bundle or a pattern.
+func (n *Node) IsUnion() bool { return n.IsGroup() && !n.IsBundle() }
+
+// IsHull reports a hull group (a merged group whose solid is the convex
+// hull of all its solid children: the smallest shape with no dents that
+// holds them).
+func (n *Node) IsHull() bool { return n.IsGroup() && n.GroupMode == ModeHull }
 
 // IsIntersect reports an intersect group (a merged group whose solid is
 // the volume common to all its solid children).
@@ -151,10 +177,16 @@ func (n *Node) Label() string {
 		return n.Name
 	}
 	switch {
+	case n.IsPattern():
+		return "Pattern"
+	case n.IsStretch():
+		return "Stretch"
 	case n.IsBundle():
 		return "Bundle"
 	case n.IsIntersect():
 		return "Intersect"
+	case n.IsHull():
+		return "Hull"
 	case n.IsGroup():
 		return "Union"
 	case n.Kind == KindMesh:
@@ -168,7 +200,7 @@ func (n *Node) Label() string {
 
 // Values returns the parameter set used to build a shape leaf.
 func (n *Node) Values() shapes.Values {
-	return shapes.Values{Num: n.Params, Text: n.Text, Font: n.Font, Sections: n.Sections, Bends: n.Bends}
+	return shapes.Values{Num: n.Params, Text: n.Text, Font: n.Font, Sections: n.Sections, Bends: n.Bends, Sketch: n.Sketch}
 }
 
 // sectionsHash is a hash of Sections, worked out once per slice (a loft
@@ -181,6 +213,17 @@ func (n *Node) sectionsHash() string {
 		n.secHash, n.secHashOf, n.secHashLen = shapes.SectionsKey(n.Sections), &n.Sections[0], len(n.Sections)
 	}
 	return n.secHash
+}
+
+// sketchHash is a hash of Sketch, worked out once per drawing.
+func (n *Node) sketchHash() string {
+	if n.Sketch == nil {
+		return ""
+	}
+	if n.skHashOf != n.Sketch {
+		n.skHash, n.skHashOf = shapes.SketchKey(n.Sketch), n.Sketch
+	}
+	return n.skHash
 }
 
 // Clone deep-copies a node (IDs included).
@@ -284,6 +327,13 @@ func (n *Node) writeKey(sb *strings.Builder, own, colors bool) {
 	}
 	fmt.Fprintf(sb, "%s|%v|%s|%v|%s|%v|", n.Kind, hole, color, n.Multicolor, n.GroupMode, n.Size)
 	if n.IsGroup() {
+		if n.IsPattern() {
+			fmt.Fprintf(sb, "%v", n.Copies())
+		}
+		if n.IsStretch() {
+			axis, at, amount := n.stretchPlane()
+			fmt.Fprintf(sb, "%d,%v,%v", axis, at, amount)
+		}
 		sb.WriteString("[")
 		for _, c := range n.Children {
 			fmt.Fprintf(sb, "%v;", c.M)
@@ -304,7 +354,7 @@ func (n *Node) writeKey(sb *strings.Builder, own, colors bool) {
 	for _, k := range keys {
 		fmt.Fprintf(sb, "%s=%g,", k, n.Params[k])
 	}
-	fmt.Fprintf(sb, "%q|%q|%s|%s|%d|", n.Text, n.Font, n.sectionsHash(), shapes.BendsKey(n.Bends), len(n.MeshData))
+	fmt.Fprintf(sb, "%q|%q|%s|%s|%s|%d|", n.Text, n.Font, n.sectionsHash(), shapes.BendsKey(n.Bends), n.sketchHash(), len(n.MeshData))
 	if n.Kind == KindMesh {
 		sb.WriteString(n.meshDataHash())
 	}
@@ -368,25 +418,59 @@ type LocalPart struct {
 // LocalParts is like Parts but without transforming geometry.
 func (n *Node) LocalParts() []LocalPart {
 	var out []LocalPart
-	var rec func(x *Node, xf geom.Mat4, hole, transp bool)
-	rec = func(x *Node, xf geom.Mat4, hole, transp bool) {
-		w := xf.Mul(x.M)
-		h := hole || x.Hole
-		t := transp || x.Transparent
-		switch {
-		case x.IsBundle():
-			for _, c := range x.Children {
-				rec(c, w, h, t)
-			}
-		case x.IsGroup():
-			m, _ := x.unionMeshFor()
-			out = append(out, LocalPart{m, w, h, t, x})
-		default:
-			out = append(out, LocalPart{x.LeafMesh(), w, h, t, x})
-		}
-	}
-	rec(n, geom.Identity(), false, false)
+	n.collect(geom.Identity(), false, false, false, func(p piece) {
+		out = append(out, LocalPart{p.mesh, p.m, p.hole, p.transp, p.owner})
+	})
 	return out
+}
+
+// piece is one evaluated piece of a node: a mesh, the matrix placing it,
+// and what it is.
+type piece struct {
+	mesh         *geom.Mesh
+	m            geom.Mat4
+	hole, transp bool
+	owner        *Node // the node the geometry came from
+}
+
+// collect gives each piece x is made of to emit, placed by xf (the
+// parent's frame) and x's own matrix: a bundle's parts one by one (a
+// pattern's for each copy, a stretch's stretched), a merged group as its
+// result, a leaf as its shape. sync evaluates merged groups now; otherwise
+// one not ready yet gives its preview and starts it in the background.
+// exact is false when a preview was given.
+func (x *Node) collect(xf geom.Mat4, hole, transp, sync bool, emit func(piece)) (exact bool) {
+	w := xf.Mul(x.M)
+	h := hole || x.Hole
+	t := transp || x.Transparent
+	switch {
+	case x.IsStretch():
+		ps, ok := x.stretchPieces(sync)
+		for _, p := range ps {
+			emit(piece{p.mesh, w.Mul(p.m), h || p.hole, t || p.transp, p.owner})
+		}
+		return ok
+	case x.IsBundle():
+		exact = true
+		x.eachCopy(w, func(w geom.Mat4) {
+			for _, c := range x.Children {
+				exact = c.collect(w, h, t, sync, emit) && exact
+			}
+		})
+		return exact
+	case x.IsGroup():
+		var m *geom.Mesh
+		ok := true
+		if sync {
+			m = x.UnionMesh()
+		} else {
+			m, ok = x.unionMeshFor()
+		}
+		emit(piece{m, w, h, t, x})
+		return ok
+	}
+	emit(piece{x.LeafMesh(), w, h, t, x})
+	return true
 }
 
 var boundsCache = geom.NewCache(100_000, nil) // key+matrix -> geom.Box
@@ -415,26 +499,44 @@ type contribution struct {
 	hole bool
 }
 
-// childContribs evaluates a child in its parent's space.
+// childContribs evaluates a child in its parent's space (synchronously:
+// it is part of a boolean being worked out).
 func childContribs(c *Node, xf geom.Mat4) []contribution {
-	if c.IsBundle() {
-		var out []contribution
-		for _, g := range c.Children {
-			for _, p := range childContribs(g, xf.Mul(c.M)) {
-				p.hole = p.hole || c.Hole
-				out = append(out, p)
+	var out []contribution
+	c.collect(xf, false, false, true, func(p piece) {
+		out = append(out, contribution{p.mesh.Transform(p.m), p.hole})
+	})
+	return out
+}
+
+// hullOf is the convex hull of the meshes' points, in the first one's
+// colour; when they have no hull (nothing between them: all flat), their
+// union, so the group still shows what it holds.
+func hullOf(ms []*geom.Mesh) *geom.Mesh {
+	var pts []geom.Vec3
+	var col *geom.Color
+	for _, m := range ms {
+		for _, t := range m.Tris {
+			if col == nil {
+				c := t.C
+				col = &c
 			}
+			pts = append(pts, t.P[0], t.P[1], t.P[2])
 		}
-		return out
 	}
-	if c.IsGroup() {
-		return []contribution{{c.UnionMesh().Transform(xf.Mul(c.M)), c.Hole}}
+	h := geom.ConvexHull(pts)
+	if h == nil {
+		return geom.UnionAll(ms)
 	}
-	return []contribution{{c.LeafMesh().Transform(xf.Mul(c.M)), c.Hole}}
+	if col != nil {
+		h = h.Colored(*col)
+	}
+	return h
 }
 
 // UnionMesh evaluates a merged group in its own space: solids are unioned
-// (intersected for an intersect group), then holes are subtracted.
+// (intersected for an intersect group, wrapped in their hull for a hull
+// group), then holes are subtracted.
 func (n *Node) UnionMesh() *geom.Mesh {
 	k := "u:" + n.key()
 	if m, ok := meshCache.Load(k); ok {
@@ -487,7 +589,12 @@ func (n *Node) UnionMesh() *geom.Mesh {
 	}
 	var m *geom.Mesh
 	if len(solids) == 0 {
-		m = geom.UnionAll(holes)
+		// all holes: the group is itself a hole, of the holes together
+		if n.IsHull() {
+			m = hullOf(holes)
+		} else {
+			m = geom.UnionAll(holes)
+		}
 	} else {
 		var s *geom.Mesh
 		if n.IsIntersect() {
@@ -495,6 +602,8 @@ func (n *Node) UnionMesh() *geom.Mesh {
 			for _, m := range perChild[1:] {
 				s = geom.Intersect(s, m)
 			}
+		} else if n.IsHull() {
+			s = hullOf(solids)
 		} else {
 			s = geom.UnionAll(solids)
 		}
@@ -542,27 +651,10 @@ func (n *Node) PartsExact() ([]Part, bool) { return n.parts() }
 // parts is Parts, also reporting whether every group was evaluated (not a
 // preview).
 func (n *Node) parts() ([]Part, bool) {
-	exact := true
 	var out []Part
-	var rec func(x *Node, xf geom.Mat4, hole, transp bool)
-	rec = func(x *Node, xf geom.Mat4, hole, transp bool) {
-		w := xf.Mul(x.M)
-		h := hole || x.Hole
-		t := transp || x.Transparent
-		switch {
-		case x.IsBundle():
-			for _, c := range x.Children {
-				rec(c, w, h, t)
-			}
-		case x.IsGroup():
-			m, ok := x.unionMeshFor()
-			exact = exact && ok
-			out = append(out, Part{Mesh: m.Transform(w), Hole: h, Transparent: t, Top: n, Owner: x})
-		default:
-			out = append(out, Part{Mesh: x.LeafMesh().Transform(w), Hole: h, Transparent: t, Top: n, Owner: x})
-		}
-	}
-	rec(n, geom.Identity(), false, false)
+	exact := n.collect(geom.Identity(), false, false, false, func(p piece) {
+		out = append(out, Part{Mesh: p.mesh.Transform(p.m), Hole: p.hole, Transparent: p.transp, Top: n, Owner: p.owner})
+	})
 	return out, exact
 }
 
@@ -717,7 +809,9 @@ func (d *Document) neededVersion() int {
 	v := 1
 	for _, n := range d.Nodes {
 		n.Walk(func(x *Node) {
-			if len(x.Bends) > 0 {
+			if x.Sketch != nil {
+				v = 4
+			} else if len(x.Bends) > 0 && v < 3 {
 				v = 3
 			} else if len(x.Sections) > 0 && v < 2 {
 				v = 2

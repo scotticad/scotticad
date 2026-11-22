@@ -428,6 +428,34 @@ func TestImportUnitsAndScale(t *testing.T) {
 	}
 }
 
+// A 3MF comes in at its own unit's size whatever Units says (that setting
+// is for STL and OBJ), and the Scale applies to it as to any file.
+func TestImport3MF(t *testing.T) {
+	var buf bytes.Buffer
+	m := doc.New()
+	n, _ := m.AddShape("box", geom.V(0, 0, 0), false)
+	n.Size = geom.V(10, 20, 5)
+	geom.Write3MF(&buf, n.WorldMesh(false), "box")
+	p := filepath.Join(t.TempDir(), "box.3mf")
+	os.WriteFile(p, buf.Bytes(), 0o644)
+	for _, c := range []struct {
+		o    ImportOptions
+		want geom.Vec3
+	}{
+		{ImportOptions{Scale: 1, Units: "in"}, geom.V(10, 20, 5)},
+		{ImportOptions{Scale: 2, Units: "mm"}, geom.V(20, 40, 10)},
+	} {
+		e := New()
+		id, err := e.ImportOn(p, geom.Vec3{}, c.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := e.Doc.Find(id).WorldBounds().Size(); s.Sub(c.want).Len() > 1e-3 {
+			t.Errorf("%+v: size %v, want %v", c.o, s, c.want)
+		}
+	}
+}
+
 // Pasting nodes with no matrix (from elsewhere) places them, as opening a
 // file would.
 func TestPasteWithoutMatrix(t *testing.T) {

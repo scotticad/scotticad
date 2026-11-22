@@ -131,7 +131,11 @@ func (a *App) drawPopups() {
 					start = i - maxRows/2
 				}
 			}
-			start = int(math.Max(0, math.Min(float64(len(items)-maxRows), float64(start)+a.fontScroll)))
+			// (the wheel's scroll kept within the list, so scrolling back
+			// from either end moves at once)
+			last := float64(len(items) - maxRows)
+			a.fontScroll = math.Max(-float64(start), math.Min(last-float64(start), a.fontScroll))
+			start = int(math.Max(0, math.Min(last, float64(start)+a.fontScroll)))
 			items = items[start : start+maxRows]
 		}
 		mr := a.menu(r.X, r.Y+r.H+2, r.W, items, 26, false)
@@ -154,7 +158,7 @@ func (a *App) drawPopups() {
 			{id: "dm-save", label: "Save", key: "Ctrl+S", icon: -1, enabled: true, click: func() { a.save(false) }},
 			{id: "dm-saveas", label: "Save as…", key: "Ctrl+Shift+S", icon: -1, enabled: true, click: func() { a.save(true) }},
 			{id: "dm-import", label: "Import…", key: "Ctrl+I", icon: -1, enabled: true, click: func() { a.popup = popImport }},
-			{id: "dm-export", label: "Export…", key: "Ctrl+E", icon: -1, enabled: true, click: func() { a.exportSel = len(a.ed.Sel) > 0; a.popup = popExport }},
+			{id: "dm-export", label: "Export…", key: "Ctrl+E", icon: -1, enabled: true, click: a.openExport},
 			{id: "dm-runscript", label: "Run script…", icon: -1, enabled: !a.con.running, click: func() { a.popup = popNone; a.runScriptFile() }},
 			{id: "dm-help", label: "Keyboard shortcuts", key: "?", icon: -1, enabled: true, click: func() { a.popup = popHelp }},
 			{id: "dm-start", label: "Start screen", icon: -1, enabled: true, click: func() { a.popup = popStart }},
@@ -313,7 +317,7 @@ func (a *App) drawBgPicker(r render.Rect) {
 	drawIcon(b, icClose, cr.Inset(5), c)
 	a.button("bg-close", cr, "", "", 0, func() { a.bgPicker, a.pickTarget = false, nil })
 	b.Fill(render.Rect{X: pr.X, Y: pr.Y + 44, W: pr.W, H: 1}, colBorder)
-	a.pickTarget = func(hex string, live bool) { a.bgColor = colorOf(hex) }
+	a.pickTarget = func(hex string) { a.bgColor = colorOf(hex) }
 	bg := a.bgColor
 	a.drawCustomColor(render.Rect{X: pr.X + 16, Y: pr.Y + 58, W: pr.W - 32, H: 270},
 		rgbHex(float64(bg[0]), float64(bg[1]), float64(bg[2])))
@@ -344,7 +348,7 @@ func (a *App) drawSettings() {
 	a.button("set-bg", sw, "", "", 0, func() { a.bgPicker = !a.bgPicker })
 	defer a.drawBgPicker(r)
 	// the app's colour theme: a preference of the user's, not the
-	// design's, so it applies at once (Cancel doesn't undo it)
+	// design's, so it applies at once (Reset default doesn't undo it)
 	yy = row("Theme")
 	var themeNames []string
 	for _, t := range themes {
@@ -443,7 +447,6 @@ func (a *App) drawSettings() {
 		if m := mergeSettings(a.settingsBase, *s, a.ed.Doc.Settings); m != a.ed.Doc.Settings {
 			a.ed.SetSettings(m)
 		}
-		a.settingsDraft = nil
 		a.closePopup()
 	})
 }
@@ -477,7 +480,7 @@ func (a *App) drawImport() {
 	x := r.X + 24
 	y := r.Y + 66
 	a.textButton("imp-choose", render.Rect{X: x, Y: y, W: 130, H: 32}, "Choose a file", false, func() {
-		if p, ok := a.openFile("Import", "3D and 2D files (*.stl;*.obj;*.svg)", "*.stl;*.obj;*.svg", "All files", "*.*"); ok {
+		if p, ok := a.openFile("Import", "3D and 2D files (*.stl;*.obj;*.3mf;*.svg)", "*.stl;*.obj;*.3mf;*.svg", "All files", "*.*"); ok {
 			a.importPath = p
 		}
 	})
@@ -489,7 +492,7 @@ func (a *App) drawImport() {
 	b.Text(name, x+142, y+16-b.LineHeight(fontUI, false)/2, fontUI, false, colTextDim)
 	b.PopClip()
 	y += 44
-	b.Text("Supported formats: .STL, .OBJ, .SVG", x, y, fontSmall, false, colTextDim)
+	b.Text("Supported formats: .STL, .OBJ, .3MF, .SVG", x, y, fontSmall, false, colTextDim)
 	y += 34
 	o := &a.importOpts
 	b.Text("Scale (%)", x, y+13-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
@@ -557,11 +560,11 @@ func (a *App) drawExport() {
 			a.button(id, render.Rect{X: x, Y: yy - 4, W: tw + 30, H: 24}, "", "", 0, click)
 		}
 	}
-	radio("exp-all", y, "Everything in the design.", !sel, true, func() { a.exportSel = false })
+	radio("exp-all", y, "Everything in the design", !sel, true, func() { a.exportSel = false })
 	y += 28
 	label := "Selected shapes"
 	if len(a.ed.Sel) == 0 {
-		label += " (you need to select something first.)"
+		label += " (select something first)"
 	}
 	radio("exp-sel", y, label, sel, len(a.ed.Sel) > 0, func() { a.exportSel = true })
 	y += 44
@@ -601,14 +604,30 @@ func (a *App) drawHelp() {
 	b := a.batch
 	rows := [][2]string{
 		{"Copy / Cut / Paste", "Ctrl+C / Ctrl+X / Ctrl+V"}, {"Paste in place", "Ctrl+Shift+V"}, {"Duplicate", "Ctrl+D"},
-		{"Delete", "Delete"}, {"Undo / Redo", "Ctrl+Z / Ctrl+Y"}, {"Select all", "Ctrl+A"},
+		{"Delete", "Delete"}, {"Undo / Redo", "Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z"}, {"Select all", "Ctrl+A"},
 		{"Union / Bundle group", "Ctrl+G / Ctrl+B"}, {"Ungroup", "Ctrl+Shift+G"}, {"Hole / Solid", "H / S"},
 		{"Hide selected / Show all", "Ctrl+H / Ctrl+Shift+H"}, {"Hide / show notes", "Shift+N"}, {"Toggle visibility mode", "V"}, {"Lock", "Ctrl+L"},
 		{"Transparent", "Ctrl+T"}, {"Nudge", "Arrows (Shift ×10)"}, {"Raise / lower", "Ctrl+Up / Ctrl+Down"},
-		{"Drop down", "D"}, {"Fit view", "F"}, {"Align / Mirror", "L / M"}, {"Split (then X / Y / Z, Enter)", "K"}, {"Section view", "Shift+K"}, {"Lay flat", "Shift+D"}, {"Place on surface", "C"},
-		{"Ruler / Construction plane / Notes", "R / W / N"}, {"Save / Open / New", "Ctrl+S / Ctrl+O / Ctrl+N"},
+		{"Drop down", "D"}, {"Fit view", "F"}, {"Align / Mirror", "L / M"}, {"Pattern", "P"}, {"Split (then X / Y / Z, Enter)", "K"}, {"Stretch (then X / Y / Z, Enter)", "T"}, {"Section view", "Shift+K"}, {"Lay flat", "Shift+D"}, {"Place on surface", "C"},
+		{"Ruler / Construction plane / Notes", "R / W / N"}, {"Save / Save as", "Ctrl+S / Ctrl+Shift+S"}, {"Open / New", "Ctrl+O / Ctrl+N"},
 		{"Import / Export", "Ctrl+I / Ctrl+E"},
 		{"Orbit", "Right drag"}, {"Pan", "Middle or Shift+Right drag"}, {"Zoom", "Wheel, or + / -"},
+	}
+	title := "Keyboard shortcuts"
+	if a.sk != nil {
+		title = "Sketch shortcuts"
+		rows = [][2]string{
+			{"Pen: create new shapes", "P"}, {"Create line", "1"}, {"Create Bézier curve (drag out the handles)", "2"},
+			{"Create smooth curve", "3"}, {"Edit: modify the selected shape", "A"}, {"Select and move", "V"},
+			{"Add & remove points", "4"}, {"End the line, then leave Pen or Edit", "Esc"}, {"End the line being drawn", "Enter"},
+			{"Type the next line's length", "Tab"}, {"Open or close the path", "O"}, {"Make hole or solid", "H"},
+			{"Mirror and turn", "M"}, {"Show dimensions", "D"},
+			{"Lines in 15° steps", "Shift"},
+			{"Off the grid", "Alt"}, {"Add to the selection", "Shift+click"}, {"Select all", "Ctrl+A"},
+			{"Copy / Cut / Paste", "Ctrl+C / Ctrl+X / Ctrl+V"}, {"Duplicate in place", "Ctrl+D"}, {"Delete points", "Delete or Backspace"},
+			{"Undo / Redo", "Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z"}, {"Nudge", "Arrows (Shift ×10)"}, {"Fit the drawing", "F"},
+			{"Pan", "Right or middle drag"}, {"Zoom", "Wheel, or + / -"},
+		}
 	}
 	// one column, or two side by side when a column is taller than the
 	// window
@@ -624,7 +643,7 @@ func (a *App) drawHelp() {
 		keyW = math.Max(keyW, b.TextWidth(row[1], fontUI, false))
 	}
 	colW := math.Min(keyAt+keyW+28, (a.W-40)/float64(cols))
-	r := a.modal(colW*float64(cols)+40, float64(per)*24+90, "Keyboard shortcuts")
+	r := a.modal(colW*float64(cols)+40, float64(per)*24+90, title)
 	for i, row := range rows {
 		x := r.X + 24 + float64(i/per)*colW
 		y := r.Y + 62 + float64(i%per)*24
@@ -645,7 +664,7 @@ func (a *App) drawAbout() {
 	drawLogo(b, render.Rect{X: cx - 32, Y: r.Y + 30, W: 64, H: 64})
 	b.TextCentered("ScottiCAD", render.Rect{X: r.X, Y: r.Y + 104, W: r.W, H: 32}, fontUI+10, true, colText)
 	b.TextCentered("Version "+scotticad.Version(), render.Rect{X: r.X, Y: r.Y + 140, W: r.W, H: 22}, fontUI+1, false, colTextDim)
-	b.TextCentered("3D modeling for makers — runs locally, no cloud required", render.Rect{X: r.X, Y: r.Y + 176, W: r.W, H: 20}, fontUI, false, colText)
+	b.TextCentered("3D modeling for makers. Runs locally, no cloud required.", render.Rect{X: r.X, Y: r.Y + 176, W: r.W, H: 20}, fontUI, false, colText)
 	b.TextCentered("Copyright 2026 scotticad.dev. Licensed under the Apache License 2.0.", render.Rect{X: r.X, Y: r.Y + 204, W: r.W, H: 20}, fontSmall, false, colTextDim)
 	// the project link
 	lr := render.Rect{X: cx - 140, Y: r.Y + 236, W: 280, H: 22}

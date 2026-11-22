@@ -29,8 +29,8 @@ dist/
 @eaDir/
 *@SynoEAStream
 *@SynoResource
-#recycle/
-#snapshot/
+\#recycle/
+\#snapshot/
 
 # --- editors and OS clutter ---
 .vscode/

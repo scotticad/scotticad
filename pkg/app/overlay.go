@@ -48,6 +48,7 @@ func (a *App) drawViewportOverlay() {
 	a.drawTubeMarkers()
 	a.drawAlignMirror()
 	a.drawSplit()
+	a.drawStretch()
 	a.drawSection()
 	a.drawMeasure()
 	a.drawOrbitCenter()
@@ -1153,7 +1154,7 @@ func (a *App) bannerText() string {
 	d := a.drag
 	switch {
 	case d != nil && d.kind == dragRotate:
-		return "Hold [Shift] to snap 45° angles"
+		return "Hold [Shift] to snap to 45° angles"
 	case d != nil && d.kind == dragMove && d.orig != nil:
 		if a.cruise {
 			return "Place on surface: drop shapes onto other shapes. Press [C] to exit"
@@ -1174,7 +1175,7 @@ func (a *App) bannerText() string {
 	case a.mode == modeVisibility:
 		return "Select shapes to hide or show them. Press [Esc] to exit"
 	case a.mode == modeMeasure:
-		return "Place start and end points to see the distance between. Type a new distance to move the shapes."
+		return "Place start and end points to see the distance between. Type a new distance to move the shapes"
 	case a.mode == modeRulerPlace:
 		return "Click to place the Ruler. Press [Esc] to cancel"
 	case a.cruise:
@@ -1183,10 +1184,10 @@ func (a *App) bannerText() string {
 	return ""
 }
 
-// drawWorking shows a banner while shapes are being combined in the
-// background: "Loading <design>…" just after opening a design, "Combining
-// shapes…" after an edit. It sits at the top of the viewport, below a tool
-// hint if one is showing.
+// drawWorking shows a banner while work goes on in the background:
+// "Loading <design>…" just after opening a design, "Combining shapes…"
+// after an edit, "Exporting <file>…" during an export. It sits at the top
+// of the viewport, below a tool hint if one is showing.
 func (a *App) drawWorking() {
 	n := doc.Pending()
 	if n == 0 {
@@ -1376,9 +1377,5 @@ func (a *App) drawSnapControls() {
 	b.RoundRect(st, 3, bg)
 	b.RoundRectStroke(st, 3, 1, colFieldBorder)
 	b.TextCentered("Settings", st, fontSmall, false, colText)
-	a.button("settings", st, "", "", 0, func() {
-		s := a.ed.Doc.Settings
-		a.settingsDraft, a.settingsBase = &s, s
-		a.openPopup(popSettings)
-	})
+	a.button("settings", st, "", "", 0, func() { a.openPopup(popSettings) })
 }

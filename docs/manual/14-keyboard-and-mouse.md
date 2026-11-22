@@ -81,6 +81,7 @@ Every key and mouse action in one place. In ScottiCAD, press **?** (or
 |---|---|
 | Align | **L** |
 | Mirror | **M** |
+| Pattern | **P** |
 | Ruler | **R** |
 | Construction plane | **W** |
 | Notes | **N** |
@@ -88,7 +89,42 @@ Every key and mouse action in one place. In ScottiCAD, press **?** (or
 | Place on surface | **C** |
 | Lay flat | **Shift+D** |
 | Split (then **X**, **Y** or **Z**, and **Enter**) | **K** |
+| Stretch (then **X**, **Y** or **Z**, and **Enter**) | **T** |
 | Section view | **Shift+K** |
+
+## The sketch workspace
+
+| Action | Keys |
+|---|---|
+| Pen: create new shapes | **P** |
+| Create line | **1** |
+| Create Bézier curve | **2** |
+| Create smooth curve | **3** |
+| Edit: modify the selected shape | **A** |
+| Select and move | **V** |
+| Add & remove points | **4** |
+| Leave the Pen or Edit tools (while drawing a line, Esc ends it first) | **Esc** |
+| Close the picture's panel (a Set scale or Level part done is dropped first) | **Esc** |
+| End the line being drawn | **Enter** |
+| Type the next line's length | **Tab** |
+| Open or close the selected path | **O** |
+| Make the selected paths holes, or solid again | **H** |
+| Show or hide Mirror and turn | **M** |
+| Show or hide dimensions | **D** |
+| Draw at 15° steps | Hold **Shift** |
+| Place a point off the grid | Hold **Alt** |
+| Select everything | **Ctrl+A** |
+| Add to the selection | **Shift**+click |
+| Copy, cut, paste paths | **Ctrl+C**, **Ctrl+X**, **Ctrl+V** |
+| Duplicate in place | **Ctrl+D** |
+| Delete the selected points | **Delete** or **Backspace** |
+| Undo, redo | **Ctrl+Z**, **Ctrl+Y** or **Ctrl+Shift+Z** |
+| Nudge | Arrow keys (**Shift** for ten steps) |
+| Fit the drawing in view | **F** |
+| Pan | Drag with the right or middle button |
+| Zoom | Mouse wheel, or **+** and **-** |
+
+**F1** lists these while the workspace is open.
 
 ## Files
 

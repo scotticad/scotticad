@@ -62,8 +62,14 @@ func (a *App) drawInspector() {
 		if k, ok := shapes.Lookup(kind); ok {
 			params = k.Params
 		}
+		if n.IsPattern() {
+			params = n.PatternParams()
+		}
+		if n.IsStretch() {
+			params = doc.StretchParams()
+		}
 	}
-	showProps := !multi && (len(params) > 0 || n.IsGroup())
+	showProps := !multi && (len(params) > 0 || n.IsGroup() || shapes.IsSketch(n.Kind))
 
 	// measure height
 	h := 40.0
@@ -277,11 +283,11 @@ func drawStripedDisc(b *render.Batch, cx, cy, r float64) {
 // --- parameters ----------------------------------------------------------------
 
 func (a *App) paramsHeight(n *doc.Node, ps []shapes.Param) float64 {
-	if n.IsGroup() && n.Assembly == "" {
+	if n.IsGroup() && n.Assembly == "" && !n.IsPattern() && !n.IsStretch() {
 		return 70
 	}
 	h := 0.0
-	if n.Assembly != "" {
+	if n.Assembly != "" || n.IsPattern() || n.IsStretch() {
 		h += 40 // the "ungroup to separate" hint
 	}
 	for _, p := range ps {
@@ -294,6 +300,9 @@ func (a *App) paramsHeight(n *doc.Node, ps []shapes.Param) float64 {
 	}
 	if shapes.IsTube(n.Kind) {
 		h += bendTableHeight(len(n.Bends))
+	}
+	if shapes.IsSketch(n.Kind) {
+		h += 44
 	}
 	return h
 }
@@ -430,6 +439,12 @@ func (a *App) drawBendTable(n *doc.Node, x, y, w float64) {
 }
 
 func (a *App) paramValue(n *doc.Node, p shapes.Param) float64 {
+	if n.IsPattern() {
+		return n.PatternValue(p.Key)
+	}
+	if n.IsStretch() {
+		return n.StretchValue(p.Key)
+	}
 	if p.SizeAxis >= 0 && p.Kind == shapes.Number {
 		return n.AxisLength(p.SizeAxis)
 	}
@@ -441,21 +456,29 @@ func (a *App) paramValue(n *doc.Node, p shapes.Param) float64 {
 
 func (a *App) drawParams(n *doc.Node, ps []shapes.Param, x, y, w float64) {
 	b := a.batch
-	if n.Assembly != "" {
+	if n.IsPattern() {
+		b.Text("Ungroup (Ctrl+Shift+G) to make", x+4, y, fontSmall, false, colTextDim)
+		b.Text("the copies separate shapes.", x+4, y+16, fontSmall, false, colTextDim)
+		y += 40
+	} else if n.IsStretch() {
+		b.Text("Amount 0 and Ungroup gives the shapes", x+4, y, fontSmall, false, colTextDim)
+		b.Text("back; Ungroup now bakes the stretch in.", x+4, y+16, fontSmall, false, colTextDim)
+		y += 40
+	} else if n.Assembly != "" {
 		b.Text("Ungroup (Ctrl+Shift+G) to separate", x+4, y, fontSmall, false, colTextDim)
 		b.Text("the parts.", x+4, y+16, fontSmall, false, colTextDim)
 		y += 40
 	} else if n.IsGroup() {
-		mode := map[string]string{doc.ModeUnion: "Union", doc.ModeBundle: "Bundle", doc.ModeIntersect: "Intersect"}[n.Mode()]
+		mode := map[string]string{doc.ModeUnion: "Union", doc.ModeBundle: "Bundle", doc.ModeIntersect: "Intersect", doc.ModeHull: "Hull"}[n.Mode()]
 		tw := b.Text("Group type: "+mode, x+4, y, fontSmall, false, colText)
 		ir := render.Rect{X: x + 4 + tw + 6, Y: y - 1, W: 16, H: 16}
 		drawIcon(b, icInfo, ir, colIcon)
-		a.button("insp-groupinfo", ir, "Bundle keeps shapes separate; Union merges them; Intersect keeps only where they overlap", "", tipBelow, func() {})
+		a.button("insp-groupinfo", ir, "Bundle keeps shapes separate; Union merges them; Intersect keeps only where they overlap; Hull wraps them in one skin with no dents", "", tipBelow, func() {})
 		bx := x + 4
 		for _, m := range []struct {
 			mode, tip string
 			icon      int
-		}{{doc.ModeBundle, "Bundle", icBundleGroupType}, {doc.ModeUnion, "Union", icUnionGroupType}, {doc.ModeIntersect, "Intersect", icIntersectGroupType}} {
+		}{{doc.ModeBundle, "Bundle", icBundleGroupType}, {doc.ModeUnion, "Union", icUnionGroupType}, {doc.ModeIntersect, "Intersect", icIntersectGroupType}, {doc.ModeHull, "Hull", icHullGroupType}} {
 			r := render.Rect{X: bx, Y: y + 22, W: 40, H: 34}
 			active := m.mode == n.Mode()
 			b.RoundRect(r, 4, colChrome)
@@ -539,7 +562,10 @@ func (a *App) drawParams(n *doc.Node, ps []shapes.Param, x, y, w float64) {
 			b.RoundRectStroke(fr, 3, 1, colFieldBorder)
 			b.Text(n.Font, fr.X+8, fr.CY()-b.LineHeight(fontUI, false)/2, fontUI, false, colText)
 			drawIcon(b, icChevronDown, render.Rect{X: fr.X + fr.W - 20, Y: fr.CY() - 7, W: 14, H: 14}, colIcon)
-			a.button(id, fr, "", "", 0, func() { a.openPopup(popFont) })
+			a.button(id, fr, "", "", 0, func() {
+				a.fontScroll = 0 // opens on the current font
+				a.openPopup(popFont)
+			})
 			if a.popup == popFont {
 				a.fontMenuAt = fr
 			}
@@ -559,6 +585,13 @@ func (a *App) drawParams(n *doc.Node, ps []shapes.Param, x, y, w float64) {
 	}
 	if shapes.IsTube(n.Kind) {
 		a.drawBendTable(n, x, y, w)
+	}
+	if shapes.IsSketch(n.Kind) {
+		nid := n.ID
+		a.primaryButton("edit-sketch", render.Rect{X: x + 4, Y: y + 4, W: w - 8, H: 30}, "Edit sketch", func() { a.editSketch(nid) })
+		if k := len(a.regions); k > 0 && a.regions[k-1].id == "edit-sketch" {
+			a.regions[k-1].tip, a.regions[k-1].tipKey, a.regions[k-1].tipSide = "Open the drawing to change it", "Double-click the shape", tipBelow
+		}
 	}
 }
 

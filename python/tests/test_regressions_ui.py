@@ -59,6 +59,29 @@ def test_typing_in_the_console_doesnt_trigger_shortcuts(cad):
     assert len(cad.nodes()) == 2
 
 
+def test_dragging_a_fresh_duplicate_moves_all_of_it(cad):
+    """A duplicate sits on its original. Dragging the duplicated shape and
+    hole must keep the click on the selected copy, not the original under
+    the pointer (which comes first in the design), and move the whole
+    selection."""
+    box = cad.add_shape("box")                              # 20 mm, on the origin
+    hole = cad.add_shape("cylinder", x=30, hole=True)
+    cad.select([box, hole])
+    cad.key("ctrl+d")
+    copies = [n["id"] for n in cad.nodes() if n["id"] not in (box, hole)]
+    assert len(copies) == 2 and sorted(cad.selection()["ids"]) == sorted(copies)
+    before = {i: cad.node(i)["bounds"]["min"] for i in (box, hole, *copies)}
+    x0, y0 = cad.project(0, 0, 20)                          # the box's top
+    x1, y1 = cad.project(0, 40, 20)
+    cad.drag(x0, y0, x1, y1, steps=8)
+    assert sorted(cad.selection()["ids"]) == sorted(copies)
+    for i in (box, hole):
+        assert cad.node(i)["bounds"]["min"] == before[i], "an original moved"
+    for i in copies:
+        moved = [a - b for a, b in zip(cad.node(i)["bounds"]["min"], before[i])]
+        assert [round(v, 6) for v in moved] == [0, 40, 0], (i, moved)
+
+
 def test_non_ascii_code_doesnt_freeze(cad):
     cad.click_control("scripting")
     cad.type_text("x = 3 × 4  # “quoted” € 🎉")

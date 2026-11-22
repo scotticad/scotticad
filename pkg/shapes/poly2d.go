@@ -42,6 +42,25 @@ func PointInPolygon(p Pt, c []Pt) bool {
 	return in
 }
 
+// windingNumber is how many times the closed outline c goes round p,
+// anticlockwise counting up: PointInPolygon's crossings, each counted by
+// its edge's direction. Nonzero is inside for the nonzero fill rule (a
+// path that goes round a place twice still fills it).
+func windingNumber(p Pt, c []Pt) int {
+	w := 0
+	for i, j := 0, len(c)-1; i < len(c); j, i = i, i+1 {
+		a, b := c[i], c[j]
+		if (a.Y > p.Y) != (b.Y > p.Y) && p.X < (b.X-a.X)*(p.Y-a.Y)/(b.Y-a.Y)+a.X {
+			if a.Y > p.Y { // the edge j -> i runs up past p
+				w++
+			} else {
+				w--
+			}
+		}
+	}
+	return w
+}
+
 // cleanContour removes consecutive duplicates and collinear points.
 func cleanContour(c []Pt) []Pt {
 	var out []Pt
@@ -92,7 +111,7 @@ func Regions(contours [][]Pt) []Region {
 		parent[i] = -1
 		bestArea := math.Inf(1)
 		for j := range cs {
-			if i == j || !PointInPolygon(cs[i][0], cs[j]) {
+			if i == j || !PointInPolygon(offEdgePoint(cs[i], cs[j]), cs[j]) {
 				continue
 			}
 			depth[i]++
@@ -126,11 +145,84 @@ func Regions(contours [][]Pt) []Region {
 	return regs
 }
 
+// offEdgePoint is a point of outline c (on it, or just inside it) that
+// isn't on d's edges, to ask whether c lies inside d: a corner, the middle
+// of a side, or a point just inside a corner. A hole whose corners all lie
+// on the outline's sides, its sides running across inside, has no corner
+// off the outline, and asked at one on it the answer could go either way
+// (a hole in a hole, an island of solid, could pass for a plain hole).
+func offEdgePoint(c, d []Pt) Pt {
+	if i := offEdge(c, d); !onEdge(c[i], d) {
+		return c[i]
+	}
+	n := len(c)
+	for i := range c {
+		if m := (Pt{(c[i].X + c[(i+1)%n].X) / 2, (c[i].Y + c[(i+1)%n].Y) / 2}); !onEdge(m, d) {
+			return m
+		}
+	}
+	// just inside a corner: along the middle of its sides, on the inside
+	sign := 1.0
+	if SignedArea(c) < 0 {
+		sign = -1
+	}
+	b := boundsOf([][]Pt{c})
+	eps := 1e-6 * math.Max(1e-9, math.Max(b.x1-b.x0, b.y1-b.y0))
+	for i := range c {
+		p, a, q := c[(i+n-1)%n], c[i], c[(i+1)%n]
+		u, v := ptUnit(ptSub(q, a)), ptUnit(ptSub(p, a))
+		dir := ptAdd(u, v)
+		if math.Hypot(dir.X, dir.Y) < 1e-12 {
+			dir = Pt{-u.Y * sign, u.X * sign}
+		} else if cross2(p, a, q)*sign < 0 { // a reflex corner: inside is the other way
+			dir = ptScale(dir, -1)
+		}
+		if m := ptAdd(a, ptScale(ptUnit(dir), eps)); !onEdge(m, d) {
+			return m
+		}
+	}
+	return c[0]
+}
+
+// offEdge is the index of a point of c that isn't on an edge of d, to test
+// c's nesting in d with: on d's edge (outlines that touch at a point, such
+// as the two lobes of a figure eight), the test could go either way. 0 when
+// every point is on d.
+func offEdge(c, d []Pt) int {
+	for i, p := range c {
+		if !onEdge(p, d) {
+			return i
+		}
+	}
+	return 0
+}
+
+// onEdge reports whether p is within 1e-9 mm of an edge of c.
+func onEdge(p Pt, c []Pt) bool {
+	for i, j := 0, len(c)-1; i < len(c); j, i = i, i+1 {
+		a, b := c[j], c[i]
+		if p.X < math.Min(a.X, b.X)-1e-9 || p.X > math.Max(a.X, b.X)+1e-9 || p.Y < math.Min(a.Y, b.Y)-1e-9 || p.Y > math.Max(a.Y, b.Y)+1e-9 {
+			continue
+		}
+		d := Pt{b.X - a.X, b.Y - a.Y}
+		l := d.X*d.X + d.Y*d.Y
+		t := 0.0
+		if l > 0 {
+			t = math.Max(0, math.Min(1, ((p.X-a.X)*d.X+(p.Y-a.Y)*d.Y)/l))
+		}
+		dx, dy := a.X+d.X*t-p.X, a.Y+d.Y*t-p.Y
+		if dx*dx+dy*dy <= 1e-18 {
+			return true
+		}
+	}
+	return false
+}
+
 // bridge merges the holes into the outer contour so the result is a single
 // (weakly simple) polygon suitable for ear clipping. Each hole, rightmost
 // first, joins the polygon at a vertex visible from its rightmost vertex
 // M: cast a ray from M along +X to the nearest edge it hits; the edge's
-// rightmost end P is visible unless a vertex inside triangle M–hit–P is
+// rightmost end P is visible unless a vertex inside triangle M-hit-P is
 // in the way, in which case the one at the smallest angle from the ray
 // is (Eberly, "Triangulation by Ear Clipping"). Bridges found this way
 // never cross each other or a contour.
@@ -148,6 +240,20 @@ func bridge(r Region) []Pt {
 	}
 	sort.Slice(holes, func(i, j int) bool { return holes[i][rightmost(holes[i])].X > holes[j][rightmost(holes[j])].X })
 	for _, h := range holes {
+		// a hole that touches the polygon at a corner (the outline, or a
+		// hole joined already, touching this one) joins it there: bridged
+		// elsewhere, the polygon would pinch at that corner too, and the
+		// ears cut from it would cover the holes
+		if k, j, ok := touching(poly, h); ok {
+			merged := make([]Pt, 0, len(poly)+len(h)+1)
+			merged = append(merged, poly[:j+1]...)
+			for s := 1; s < len(h); s++ {
+				merged = append(merged, h[(k+s)%len(h)])
+			}
+			merged = append(merged, poly[j])
+			poly = append(merged, poly[j+1:]...)
+			continue
+		}
 		mi := rightmost(h)
 		m := h[mi]
 		pi := visibleVertex(poly, m)
@@ -163,14 +269,63 @@ func bridge(r Region) []Pt {
 		}
 		merged := make([]Pt, 0, len(poly)+len(h)+2)
 		merged = append(merged, poly[:pi+1]...)
-		for k := 0; k <= len(h); k++ {
-			merged = append(merged, h[(mi+k)%len(h)])
+		if same(m, poly[pi]) {
+			// the hole touches the outline there: no bridge, the hole's
+			// loop goes round from that point and back to it (a bridge of
+			// no length would leave four copies of the point, two edges of
+			// no length, and the hole covered)
+			for k := 1; k < len(h); k++ {
+				merged = append(merged, h[(mi+k)%len(h)])
+			}
+		} else {
+			for k := 0; k <= len(h); k++ {
+				merged = append(merged, h[(mi+k)%len(h)])
+			}
 		}
 		merged = append(merged, poly[pi])
 		merged = append(merged, poly[pi+1:]...)
 		poly = merged
 	}
 	return poly
+}
+
+// touching finds a corner hole h shares with poly: h[k] is poly[j], at the
+// copy of that point (it can appear more than once) whose interior angle
+// the hole lies in. ok is false when they share none.
+func touching(poly, h []Pt) (k, j int, ok bool) {
+	n, hn := len(poly), len(h)
+	if n < 3 || hn < 3 {
+		return 0, 0, false
+	}
+	b := boundsOf([][]Pt{poly})
+	eps := 1e-7 * math.Max(1, math.Max(b.x1-b.x0, b.y1-b.y0))
+	for k = range h {
+		v := h[k]
+		// a point just inside the hole's corner there: along the middle of
+		// its two sides (or across, where they run straight on)
+		a, c := ptUnit(ptSub(h[(k+1)%hn], v)), ptUnit(ptSub(h[(k+hn-1)%hn], v))
+		d := ptAdd(a, c)
+		if math.Hypot(d.X, d.Y) < 1e-9 {
+			d = Pt{-a.Y, a.X}
+		}
+		probe := ptAdd(v, ptScale(ptUnit(d), eps))
+		first := -1
+		for j = range poly {
+			if !same(poly[j], v) {
+				continue
+			}
+			if first < 0 {
+				first = j
+			}
+			if inWedge(poly[(j+n-1)%n], poly[j], poly[(j+1)%n], probe) {
+				return k, j, true
+			}
+		}
+		if first >= 0 {
+			return k, first, true
+		}
+	}
+	return 0, 0, false
 }
 
 // inWedge reports whether point m lies within the polygon's interior angle
@@ -191,15 +346,19 @@ func visibleVertex(poly []Pt, m Pt) int {
 	n := len(poly)
 	best, bi := math.Inf(1), -1
 	hitVertex := false
+	// on the ray's line: within rounding of it (taken exactly, a corner at
+	// y -2.775 and a hole's at -2.7749999999999986 are apart, and the
+	// bridge runs through the corner, along the side beyond it)
+	on := func(y float64) bool { return math.Abs(y-m.Y) <= 1e-9 }
 	for i := 0; i < n; i++ {
 		a, b := poly[i], poly[(i+1)%n]
-		if a.Y == m.Y && a.X >= m.X { // the ray passes through a vertex
+		if on(a.Y) && a.X >= m.X { // the ray passes through a vertex
 			if d := a.X - m.X; d < best || (d == best && !hitVertex) {
 				best, bi, hitVertex = d, i, true
 			}
 			continue
 		}
-		if (a.Y < m.Y) == (b.Y < m.Y) || b.Y == m.Y {
+		if on(a.Y) || on(b.Y) || (a.Y < m.Y) == (b.Y < m.Y) {
 			continue // doesn't cross the ray's line (or ends on it: a vertex hit)
 		}
 		x := a.X + (m.Y-a.Y)*(b.X-a.X)/(b.Y-a.Y)
@@ -229,12 +388,14 @@ func visibleVertex(poly []Pt, m Pt) int {
 		if i == p || same(q, pp) || q.X < m.X {
 			continue
 		}
-		// strictly inside triangle m, hit, pp (either winding)
+		// inside triangle m, hit, pp (either winding), or on the line from
+		// m to pp: a vertex there is in the bridge's way (the bridge would
+		// run through it), and nearer at the same angle, it wins below
 		in := false
 		if cross2(m, hit, pp) > 0 {
-			in = cross2(m, hit, q) > 1e-12 && cross2(hit, pp, q) > 1e-12 && cross2(pp, m, q) > 1e-12
+			in = cross2(m, hit, q) > 1e-12 && cross2(hit, pp, q) > 1e-12 && cross2(pp, m, q) >= -1e-12
 		} else {
-			in = cross2(m, hit, q) < -1e-12 && cross2(hit, pp, q) < -1e-12 && cross2(pp, m, q) < -1e-12
+			in = cross2(m, hit, q) < -1e-12 && cross2(hit, pp, q) < -1e-12 && cross2(pp, m, q) <= 1e-12
 		}
 		if !in {
 			continue
@@ -261,12 +422,110 @@ func same(a, b Pt) bool { return math.Abs(a.X-b.X) < 1e-9 && math.Abs(a.Y-b.Y) <
 // the bridged polygon, walking a ring of the remaining vertices so each
 // step carries on from the last ear, with the vertices kept in a grid so
 // an ear's emptiness is checked against only its neighbours.
+//
+// A region whose outlines touch at corners (a hole whose corners all lie
+// on the outline, an outline touching itself) bridges to a polygon that
+// pinches there; the ear clipper can find no ear across a pinch, and the
+// cut it then forces covers more than the region. When the triangles'
+// area doesn't match the region's, the region is cut in horizontal slabs
+// instead (`slabTriangulate`), which touching outlines can't confuse. Its
+// triangles have corners part way along the outlines' sides, so a mesh
+// built with them needs FixTJunctions: callers that build walls from the
+// outlines use triangulate, which says when that happened.
 func Triangulate(r Region) [][3]Pt {
+	tris, _ := triangulate(r)
+	return tris
+}
+
+// triangulate is Triangulate, and whether it fell back to slabs (whose
+// corners on the outlines' sides the walls don't have).
+func triangulate(r Region) ([][3]Pt, bool) {
 	poly := bridge(r)
-	n := len(poly)
-	if n < 3 {
-		return nil
+	if len(poly) < 3 {
+		return nil, false
 	}
+	tris := earClip(poly)
+	want := math.Abs(SignedArea(r.Outer))
+	for _, h := range r.Holes {
+		want -= math.Abs(SignedArea(h))
+	}
+	area := func(ts [][3]Pt) float64 {
+		s := 0.0
+		for _, t := range ts {
+			s += math.Abs(SignedArea([]Pt{t[0], t[1], t[2]}))
+		}
+		return s
+	}
+	tol := 1e-9 * math.Max(1, want)
+	if got := area(tris); math.Abs(got-want) > tol {
+		if slabs := slabTriangulate(r); math.Abs(area(slabs)-want) < math.Abs(got-want) {
+			return slabs, true
+		}
+	}
+	return tris, false
+}
+
+// slabTriangulate cuts a region into triangles slab by slab: between each
+// two heights its corners are at, the sides crossing the slab, in order
+// across, pair off (even-odd: outline and holes nest) into trapezoids.
+func slabTriangulate(r Region) [][3]Pt {
+	type side struct{ a, b Pt } // a below b
+	var sides []side
+	var ys []float64
+	for _, c := range append([][]Pt{r.Outer}, r.Holes...) {
+		for i := range c {
+			a, b := c[i], c[(i+1)%len(c)]
+			ys = append(ys, a.Y)
+			if a.Y == b.Y {
+				continue
+			}
+			if a.Y > b.Y {
+				a, b = b, a
+			}
+			sides = append(sides, side{a, b})
+		}
+	}
+	sort.Float64s(ys)
+	xAt := func(s side, y float64) float64 {
+		switch y {
+		case s.a.Y:
+			return s.a.X
+		case s.b.Y:
+			return s.b.X
+		}
+		return s.a.X + (y-s.a.Y)*(s.b.X-s.a.X)/(s.b.Y-s.a.Y)
+	}
+	var out [][3]Pt
+	type cross struct{ x0, x1, xm float64 }
+	for k := 0; k+1 < len(ys); k++ {
+		y0, y1 := ys[k], ys[k+1]
+		if y1-y0 < 1e-12 {
+			continue
+		}
+		ym := (y0 + y1) / 2
+		var cs []cross
+		for _, s := range sides {
+			if s.a.Y <= y0 && s.b.Y >= y1 {
+				cs = append(cs, cross{xAt(s, y0), xAt(s, y1), xAt(s, ym)})
+			}
+		}
+		sort.Slice(cs, func(i, j int) bool { return cs[i].xm < cs[j].xm })
+		for i := 0; i+1 < len(cs); i += 2 {
+			l, rt := cs[i], cs[i+1]
+			bl, br, tr, tl := Pt{l.x0, y0}, Pt{rt.x0, y0}, Pt{rt.x1, y1}, Pt{l.x1, y1}
+			for _, t := range [][3]Pt{{bl, br, tr}, {bl, tr, tl}} {
+				if cross2(t[0], t[1], t[2]) > 1e-12 {
+					out = append(out, t)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// earClip cuts a bridged polygon into triangles (see Triangulate).
+func earClip(poly []Pt) [][3]Pt {
+	n := len(poly)
 	prev, next := make([]int, n), make([]int, n)
 	for i := range poly {
 		prev[i], next[i] = (i+n-1)%n, (i+1)%n
